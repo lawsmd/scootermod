@@ -4,7 +4,7 @@
 ## Author: Scooter
 ## Version: 1.2.1
 ## IconTexture: Interface\AddOns\Scoot\ScootIcon
-## OptionalDeps: Blizzard_Settings, Blizzard_Settings_Shared
+## OptionalDeps: Blizzard_Settings, Blizzard_Settings_Shared, LibSharedMedia-3.0
 ## SavedVariables: ScootDB
 ## SlashCmd: /scoot
 
@@ -23,6 +23,7 @@ libs/LibDeflate/LibDeflate.lua
 core/framestate.lua
 core/secretsafe.lua
 core/media.lua
+core/lsm.lua
 core/specabbreviations.lua
 core/animations.lua
 core/petbattle.lua

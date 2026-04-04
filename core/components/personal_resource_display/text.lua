@@ -32,30 +32,17 @@ local textHooksInstalled = { power = false, health = false }
 -- Font Resolution
 --------------------------------------------------------------------------------
 
--- Resolve font path from font name or font key
+-- Resolve font path from font name or font key.
+-- Delegates to addon.ResolveFontFace which handles internal keys, LSM keys, and fallback.
 local function resolveFontPath(fontName)
     if not fontName or fontName == "" then
         return "Fonts\\FRIZQT__.TTF"
     end
+    -- If it looks like a file path already, use it directly
     if fontName:match("\\") or fontName:match("/") then
         return fontName
     end
-    -- Check addon.Fonts registry (handles keys like ROBOTO_REG, FIRASANS_BOLD, etc.)
-    if addon.Fonts and addon.Fonts[fontName] then
-        return addon.Fonts[fontName]
-    end
-    local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
-    if LSM then
-        local path = LSM:Fetch("font", fontName)
-        if path then return path end
-    end
-    local fontMap = {
-        ["Friz Quadrata TT"] = "Fonts\\FRIZQT__.TTF",
-        ["Arial Narrow"] = "Fonts\\ARIALN.TTF",
-        ["Morpheus"] = "Fonts\\MORPHEUS.TTF",
-        ["Skurri"] = "Fonts\\SKURRI.TTF",
-    }
-    return fontMap[fontName] or "Fonts\\FRIZQT__.TTF"
+    return addon.ResolveFontFace(fontName)
 end
 
 --------------------------------------------------------------------------------

@@ -178,7 +178,15 @@ function Controls:CreateFontSelector(options)
     -- Get display text and update font rendering
     local function UpdateDisplay()
         local currentValue = row._currentValue
-        local displayText = addon.FontDisplayNames and addon.FontDisplayNames[currentValue] or currentValue
+        local displayText
+        if addon.IsLSMKey and addon.IsLSMKey(currentValue) then
+            displayText = addon.LSMKeyToName(currentValue)
+            if not addon.LSMAvailable then
+                displayText = displayText .. " (missing)"
+            end
+        else
+            displayText = addon.FontDisplayNames and addon.FontDisplayNames[currentValue] or currentValue
+        end
         valueText:SetText(displayText)
 
         -- Try to render the text in the selected font

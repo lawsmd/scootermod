@@ -118,7 +118,15 @@ end
 -- Resolve a font face name to an actual file path for SetFont.
 -- Falls back to the face of GameFontNormal if unknown.
 function addon.ResolveFontFace(key)
-    local face = (addon.Fonts and addon.Fonts[key or "FRIZQT__"]) or (select(1, _G.GameFontNormal:GetFont()))
+    key = key or "FRIZQT__"
+    -- LSM-sourced font
+    if addon.IsLSMKey and addon.IsLSMKey(key) then
+        local path = addon.LSMFetch and addon.LSMFetch("font", key)
+        if path then return path end
+        -- LSM font unavailable; fall through to GameFontNormal fallback
+    end
+    local face = (addon.Fonts and addon.Fonts[key])
+                 or (select(1, _G.GameFontNormal:GetFont()))
     return face
 end
 
@@ -253,6 +261,7 @@ for _, tabData in ipairs(FONT_TABS) do
 end
 
 local function GetCategoryForFont(key)
+    if addon.IsLSMKey and addon.IsLSMKey(key) then return "shared" end
     return fontCategoryMap[key] or "default"
 end
 
@@ -384,59 +393,75 @@ local function CreateFontPicker()
     tabSep:SetColorTexture(accentR, accentG, accentB, 0.4)
     frame._tabSep = tabSep
 
-    -- Tab buttons
+    -- Tab buttons (managed pool, rebuilt on each Show via UpdateTabs)
     frame.TabButtons = {}
-    local labelFont = (Theme and Theme.GetFont and Theme:GetFont("LABEL")) or "Fonts\\FRIZQT__.TTF"
+    frame._tabLabelFont = (Theme and Theme.GetFont and Theme:GetFont("LABEL")) or "Fonts\\FRIZQT__.TTF"
 
-    for i, tabData in ipairs(FONT_TABS) do
-        local tabBtn = CreateFrame("Button", nil, tabContainer)
-        tabBtn:SetSize(TAB_WIDTH, TAB_HEIGHT)
-        tabBtn:SetPoint("TOPLEFT", tabContainer, "TOPLEFT", 0, -((i - 1) * TAB_HEIGHT))
-        tabBtn:EnableMouse(true)
-        tabBtn:RegisterForClicks("AnyUp")
+    function frame:UpdateTabs()
+        local tabs = self._workingTabs or FONT_TABS
+        local tc = self.TabContainer
+        local lf = self._tabLabelFont
+        local ar, ag, ab = self._accentR, self._accentG, self._accentB
 
-        local tabBg = tabBtn:CreateTexture(nil, "BACKGROUND", nil, -6)
-        tabBg:SetAllPoints()
-        tabBg:SetColorTexture(0.06, 0.06, 0.08, 1)
-        tabBtn._bg = tabBg
+        for i, tabData in ipairs(tabs) do
+            local tabBtn = self.TabButtons[i]
+            if not tabBtn then
+                tabBtn = CreateFrame("Button", nil, tc)
+                tabBtn:SetSize(TAB_WIDTH, TAB_HEIGHT)
+                tabBtn:EnableMouse(true)
+                tabBtn:RegisterForClicks("AnyUp")
 
-        local indicator = tabBtn:CreateTexture(nil, "OVERLAY", nil, 1)
-        indicator:SetSize(2, TAB_HEIGHT)
-        indicator:SetPoint("LEFT", tabBtn, "LEFT", 0, 0)
-        indicator:SetColorTexture(accentR, accentG, accentB, 1)
-        indicator:Hide()
-        tabBtn._indicator = indicator
+                local tabBg = tabBtn:CreateTexture(nil, "BACKGROUND", nil, -6)
+                tabBg:SetAllPoints()
+                tabBg:SetColorTexture(0.06, 0.06, 0.08, 1)
+                tabBtn._bg = tabBg
 
-        local tabLabel = tabBtn:CreateFontString(nil, "OVERLAY")
-        tabLabel:SetFont(labelFont, 11, "")
-        tabLabel:SetPoint("CENTER", tabBtn, "CENTER", 2, 0)
-        tabLabel:SetText(tabData.label)
-        tabLabel:SetTextColor(0.6, 0.6, 0.6, 1)
-        tabBtn._label = tabLabel
+                local indicator = tabBtn:CreateTexture(nil, "OVERLAY", nil, 1)
+                indicator:SetSize(2, TAB_HEIGHT)
+                indicator:SetPoint("LEFT", tabBtn, "LEFT", 0, 0)
+                indicator:SetColorTexture(ar, ag, ab, 1)
+                indicator:Hide()
+                tabBtn._indicator = indicator
 
-        tabBtn._key = tabData.key
+                local tabLabel = tabBtn:CreateFontString(nil, "OVERLAY")
+                tabLabel:SetFont(lf, 11, "")
+                tabLabel:SetPoint("CENTER", tabBtn, "CENTER", 2, 0)
+                tabLabel:SetTextColor(0.6, 0.6, 0.6, 1)
+                tabBtn._label = tabLabel
 
-        tabBtn:SetScript("OnEnter", function(self)
-            if selectedFontTab ~= self._key then
-                self._bg:SetColorTexture(accentR, accentG, accentB, 0.15)
+                tabBtn:SetScript("OnEnter", function(self)
+                    if selectedFontTab ~= self._key then
+                        self._bg:SetColorTexture(ar, ag, ab, 0.15)
+                    end
+                end)
+                tabBtn:SetScript("OnLeave", function(self)
+                    if selectedFontTab ~= self._key then
+                        self._bg:SetColorTexture(0.06, 0.06, 0.08, 1)
+                    end
+                end)
+                tabBtn:SetScript("OnClick", function(self)
+                    if selectedFontTab ~= self._key then
+                        selectedFontTab = self._key
+                        frame:UpdateTabVisuals()
+                        frame:PopulateContent()
+                        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+                    end
+                end)
+
+                self.TabButtons[i] = tabBtn
             end
-        end)
-        tabBtn:SetScript("OnLeave", function(self)
-            if selectedFontTab ~= self._key then
-                self._bg:SetColorTexture(0.06, 0.06, 0.08, 1)
-            end
-        end)
 
-        tabBtn:SetScript("OnClick", function(self)
-            if selectedFontTab ~= self._key then
-                selectedFontTab = self._key
-                frame:UpdateTabVisuals()
-                frame:PopulateContent()
-                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            end
-        end)
+            tabBtn._key = tabData.key
+            tabBtn._label:SetText(tabData.label)
+            tabBtn:ClearAllPoints()
+            tabBtn:SetPoint("TOPLEFT", tc, "TOPLEFT", 0, -((i - 1) * TAB_HEIGHT))
+            tabBtn:Show()
+        end
 
-        frame.TabButtons[tabData.key] = tabBtn
+        -- Hide extra buttons from previous Show
+        for i = #tabs + 1, #self.TabButtons do
+            self.TabButtons[i]:Hide()
+        end
     end
 
     -- Content area (scroll frame, right of tabs)
@@ -494,8 +519,8 @@ local function CreateFontPicker()
 
     -- Update tab visuals
     function frame:UpdateTabVisuals()
-        for key, tabBtn in pairs(self.TabButtons) do
-            local isSelected = (selectedFontTab == key)
+        for _, tabBtn in ipairs(self.TabButtons) do
+            local isSelected = (selectedFontTab == tabBtn._key)
             if isSelected then
                 tabBtn._indicator:Show()
                 tabBtn._label:SetTextColor(1, 1, 1, 1)
@@ -511,7 +536,7 @@ local function CreateFontPicker()
     -- Populate content for selected tab
     function frame:PopulateContent()
         local currentTab = nil
-        for _, tabData in ipairs(FONT_TABS) do
+        for _, tabData in ipairs(self._workingTabs or FONT_TABS) do
             if tabData.key == selectedFontTab then
                 currentTab = tabData
                 break
@@ -596,7 +621,12 @@ local function CreateFontPicker()
             end
 
             -- Set display name
-            local displayText = displayNames[fontKey] or fontKey
+            local displayText
+            if addon.IsLSMKey and addon.IsLSMKey(fontKey) then
+                displayText = addon.LSMKeyToName(fontKey)
+            else
+                displayText = displayNames[fontKey] or fontKey
+            end
             btn.Label:SetText(displayText)
 
             -- Selection state
@@ -623,7 +653,12 @@ local function CreateFontPicker()
                     fontPickerCallback(value)
                 end
                 if fontPickerAnchor and fontPickerAnchor.Text then
-                    local dt = addon.FontDisplayNames and addon.FontDisplayNames[value] or value
+                    local dt
+                    if addon.IsLSMKey and addon.IsLSMKey(value) then
+                        dt = addon.LSMKeyToName(value)
+                    else
+                        dt = addon.FontDisplayNames and addon.FontDisplayNames[value] or value
+                    end
                     fontPickerAnchor.Text:SetText(dt)
                 end
                 CloseFontPicker()
@@ -688,14 +723,49 @@ function addon.ShowFontPicker(anchor, setting, optionsProvider, callback)
         currentValue = setting:GetValue()
     end
 
+    -- Build working tabs (static tabs + optional LSM "Shared" tab)
+    local workingTabs = {}
+    for i, tabData in ipairs(FONT_TABS) do
+        workingTabs[i] = tabData
+    end
+    if addon.LSMAvailable then
+        -- Build dedup set from Scoot-internal font paths
+        local internalPaths = {}
+        if addon.Fonts then
+            for _, path in pairs(addon.Fonts) do
+                internalPaths[path:lower()] = true
+            end
+        end
+        -- Filter LSM entries
+        local filteredKeys = {}
+        local lsmNames = addon.LSM:List("font")
+        for _, lsmName in ipairs(lsmNames) do
+            local path = addon.LSM:Fetch("font", lsmName, true)
+            if path and not internalPaths[path:lower()] then
+                filteredKeys[#filteredKeys + 1] = addon.LSMNameToKey(lsmName)
+            end
+        end
+        if #filteredKeys > 0 then
+            workingTabs[#workingTabs + 1] = { key = "shared", label = "Shared", fonts = filteredKeys }
+        end
+    end
+    frame._workingTabs = workingTabs
+
     -- Auto-select tab containing the currently selected font
     if currentValue then
         selectedFontTab = GetCategoryForFont(currentValue)
     else
         selectedFontTab = "default"
     end
+    -- Fallback if selected category (e.g. "shared") has no tab
+    local tabFound = false
+    for _, tabData in ipairs(workingTabs) do
+        if tabData.key == selectedFontTab then tabFound = true; break end
+    end
+    if not tabFound then selectedFontTab = "default" end
 
-    -- Update visuals and populate
+    -- Update tabs, visuals and populate
+    frame:UpdateTabs()
     frame:UpdateTabVisuals()
     frame:PopulateContent()
 

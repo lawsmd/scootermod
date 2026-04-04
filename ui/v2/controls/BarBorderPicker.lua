@@ -78,6 +78,9 @@ local selectedTab = "standard"
 --------------------------------------------------------------------------------
 
 local function GetBorderDisplayName(key)
+    if addon.IsLSMKey and addon.IsLSMKey(key) then
+        return addon.LSMKeyToName(key)
+    end
     if key == "blizzardDefault" then return "Blizzard Default" end
     if key == "default" then return "Default" end
     if key == "none" then return "No Border" end
@@ -116,6 +119,7 @@ local function GetBorderEdgeSize(key)
 end
 
 local function GetCategoryForBorder(borderKey)
+    if addon.IsLSMKey and addon.IsLSMKey(borderKey) then return "shared" end
     for _, key in ipairs(TRADITIONAL_BORDERS) do
         if key == borderKey then return "standard" end
     end
@@ -257,65 +261,75 @@ local function CreateBarBorderPicker()
     tabSep:SetColorTexture(accentR, accentG, accentB, 0.4)
     frame._tabSep = tabSep
 
-    -- Tab buttons
+    -- Tab buttons (managed pool, rebuilt on each Show via UpdateTabs)
     frame.TabButtons = {}
-    local labelFont = (theme and theme.GetFont and theme:GetFont("LABEL")) or "Fonts\\FRIZQT__.TTF"
+    frame._tabLabelFont = (theme and theme.GetFont and theme:GetFont("LABEL")) or "Fonts\\FRIZQT__.TTF"
 
-    for i, tabData in ipairs(TABS) do
-        local tabBtn = CreateFrame("Button", nil, tabContainer)
-        tabBtn:SetSize(TAB_WIDTH, TAB_HEIGHT)
-        tabBtn:SetPoint("TOPLEFT", tabContainer, "TOPLEFT", 0, -((i - 1) * TAB_HEIGHT))
-        tabBtn:EnableMouse(true)
-        tabBtn:RegisterForClicks("AnyUp")
+    function frame:UpdateTabs()
+        local tabs = self._workingTabs or TABS
+        local tc = self.TabContainer
+        local lf = self._tabLabelFont
+        local ar, ag, ab = self._accentR, self._accentG, self._accentB
 
-        -- Tab background
-        local tabBg = tabBtn:CreateTexture(nil, "BACKGROUND", nil, -6)
-        tabBg:SetAllPoints()
-        tabBg:SetColorTexture(0.06, 0.06, 0.08, 1)
-        tabBtn._bg = tabBg
+        for i, tabData in ipairs(tabs) do
+            local tabBtn = self.TabButtons[i]
+            if not tabBtn then
+                tabBtn = CreateFrame("Button", nil, tc)
+                tabBtn:SetSize(TAB_WIDTH, TAB_HEIGHT)
+                tabBtn:EnableMouse(true)
+                tabBtn:RegisterForClicks("AnyUp")
 
-        -- Left indicator (shown when selected)
-        local indicator = tabBtn:CreateTexture(nil, "OVERLAY", nil, 1)
-        indicator:SetSize(2, TAB_HEIGHT)
-        indicator:SetPoint("LEFT", tabBtn, "LEFT", 0, 0)
-        indicator:SetColorTexture(accentR, accentG, accentB, 1)
-        indicator:Hide()
-        tabBtn._indicator = indicator
+                local tabBg = tabBtn:CreateTexture(nil, "BACKGROUND", nil, -6)
+                tabBg:SetAllPoints()
+                tabBg:SetColorTexture(0.06, 0.06, 0.08, 1)
+                tabBtn._bg = tabBg
 
-        -- Tab label
-        local tabLabel = tabBtn:CreateFontString(nil, "OVERLAY")
-        tabLabel:SetFont(labelFont, 11, "")
-        tabLabel:SetPoint("CENTER", tabBtn, "CENTER", 2, 0)
-        tabLabel:SetText(tabData.label)
-        tabLabel:SetTextColor(0.6, 0.6, 0.6, 1)
-        tabBtn._label = tabLabel
+                local indicator = tabBtn:CreateTexture(nil, "OVERLAY", nil, 1)
+                indicator:SetSize(2, TAB_HEIGHT)
+                indicator:SetPoint("LEFT", tabBtn, "LEFT", 0, 0)
+                indicator:SetColorTexture(ar, ag, ab, 1)
+                indicator:Hide()
+                tabBtn._indicator = indicator
 
-        tabBtn._key = tabData.key
-        tabBtn._borders = tabData.borders
+                local tabLabel = tabBtn:CreateFontString(nil, "OVERLAY")
+                tabLabel:SetFont(lf, 11, "")
+                tabLabel:SetPoint("CENTER", tabBtn, "CENTER", 2, 0)
+                tabLabel:SetTextColor(0.6, 0.6, 0.6, 1)
+                tabBtn._label = tabLabel
 
-        -- Hover effects
-        tabBtn:SetScript("OnEnter", function(self)
-            if selectedTab ~= self._key then
-                self._bg:SetColorTexture(accentR, accentG, accentB, 0.15)
+                tabBtn:SetScript("OnEnter", function(self)
+                    if selectedTab ~= self._key then
+                        self._bg:SetColorTexture(ar, ag, ab, 0.15)
+                    end
+                end)
+                tabBtn:SetScript("OnLeave", function(self)
+                    if selectedTab ~= self._key then
+                        self._bg:SetColorTexture(0.06, 0.06, 0.08, 1)
+                    end
+                end)
+                tabBtn:SetScript("OnClick", function(self)
+                    if selectedTab ~= self._key then
+                        selectedTab = self._key
+                        frame:UpdateTabVisuals()
+                        frame:PopulateContent()
+                        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+                    end
+                end)
+
+                self.TabButtons[i] = tabBtn
             end
-        end)
-        tabBtn:SetScript("OnLeave", function(self)
-            if selectedTab ~= self._key then
-                self._bg:SetColorTexture(0.06, 0.06, 0.08, 1)
-            end
-        end)
 
-        -- Click to switch tab
-        tabBtn:SetScript("OnClick", function(self)
-            if selectedTab ~= self._key then
-                selectedTab = self._key
-                frame:UpdateTabVisuals()
-                frame:PopulateContent()
-                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            end
-        end)
+            tabBtn._key = tabData.key
+            tabBtn._label:SetText(tabData.label)
+            tabBtn:ClearAllPoints()
+            tabBtn:SetPoint("TOPLEFT", tc, "TOPLEFT", 0, -((i - 1) * TAB_HEIGHT))
+            tabBtn:Show()
+        end
 
-        frame.TabButtons[tabData.key] = tabBtn
+        -- Hide extra buttons from previous Show
+        for i = #tabs + 1, #self.TabButtons do
+            self.TabButtons[i]:Hide()
+        end
     end
 
     -- Content area (scroll frame, right of tabs)
@@ -375,7 +389,7 @@ local function CreateBarBorderPicker()
     frame._edgeRow = edgeRow
 
     local edgeLabel = edgeRow:CreateFontString(nil, "OVERLAY")
-    edgeLabel:SetFont(labelFont, 11, "")
+    edgeLabel:SetFont(frame._tabLabelFont, 11, "")
     edgeLabel:SetPoint("LEFT", edgeRow, "LEFT", 0, 0)
     edgeLabel:SetText("Hide Edge:")
     edgeLabel:SetTextColor(0.6, 0.6, 0.6, 1)
@@ -480,8 +494,8 @@ local function CreateBarBorderPicker()
 
     -- Update tab visuals function
     function frame:UpdateTabVisuals()
-        for key, tabBtn in pairs(self.TabButtons) do
-            local isSelected = (selectedTab == key)
+        for _, tabBtn in ipairs(self.TabButtons) do
+            local isSelected = (selectedTab == tabBtn._key)
             if isSelected then
                 tabBtn._indicator:Show()
                 tabBtn._label:SetTextColor(1, 1, 1, 1)
@@ -497,7 +511,7 @@ local function CreateBarBorderPicker()
     -- Populate content function
     function frame:PopulateContent()
         local currentTab = nil
-        for _, tabData in ipairs(TABS) do
+        for _, tabData in ipairs(self._workingTabs or TABS) do
             if tabData.key == selectedTab then
                 currentTab = tabData
                 break
@@ -736,14 +750,55 @@ function addon.ShowBarBorderPicker(anchor, setting, includeNone, callback, hidde
         currentValue = setting:GetValue()
     end
 
+    -- Build working tabs (static tabs + optional LSM "Shared" tab)
+    local workingTabs = {}
+    for i, tabData in ipairs(TABS) do
+        workingTabs[i] = tabData
+    end
+    if addon.LSMAvailable then
+        -- Build dedup set from Scoot-internal border texture paths
+        local internalPaths = {}
+        local allBorderKeys = {}
+        for _, k in ipairs(TRADITIONAL_BORDERS) do allBorderKeys[#allBorderKeys + 1] = k end
+        for _, k in ipairs(CLEAN_BORDERS) do allBorderKeys[#allBorderKeys + 1] = k end
+        for _, bKey in ipairs(allBorderKeys) do
+            if addon.BarBorders and addon.BarBorders.GetStyle then
+                local style = addon.BarBorders.GetStyle(bKey)
+                if style and style.texture then
+                    internalPaths[style.texture:lower()] = true
+                end
+            end
+        end
+        -- Filter LSM entries
+        local filteredKeys = {}
+        local lsmNames = addon.LSM:List("border")
+        for _, lsmName in ipairs(lsmNames) do
+            local path = addon.LSM:Fetch("border", lsmName, true)
+            if path and not internalPaths[path:lower()] then
+                filteredKeys[#filteredKeys + 1] = addon.LSMNameToKey(lsmName)
+            end
+        end
+        if #filteredKeys > 0 then
+            workingTabs[#workingTabs + 1] = { key = "shared", label = "Shared", borders = filteredKeys }
+        end
+    end
+    frame._workingTabs = workingTabs
+
     -- Switch to appropriate tab if current border is in a different category
     if currentValue then
         selectedTab = GetCategoryForBorder(currentValue)
     else
         selectedTab = "standard"
     end
+    -- Fallback if selected category (e.g. "shared") has no tab
+    local tabFound = false
+    for _, tabData in ipairs(workingTabs) do
+        if tabData.key == selectedTab then tabFound = true; break end
+    end
+    if not tabFound then selectedTab = "standard" end
 
-    -- Update visuals and populate
+    -- Update tabs, visuals and populate
+    frame:UpdateTabs()
     frame:UpdateTabVisuals()
     frame:PopulateContent()
     frame:UpdateEdgeToggles()
@@ -942,6 +997,9 @@ function Controls:CreateBarBorderSelector(options)
     local function UpdateDisplay()
         local currentValue = row._currentValue
         local displayText = GetBorderDisplayName(currentValue)
+        if addon.IsLSMKey and addon.IsLSMKey(currentValue) and not addon.LSMAvailable then
+            displayText = displayText .. " (missing)"
+        end
         valueText:SetText(displayText)
     end
 

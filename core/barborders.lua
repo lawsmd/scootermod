@@ -342,7 +342,7 @@ local function handleSizeChanged(frame)
     if not frame or not bfState or not bfState.state then return end
     local state = bfState.state
     if not state.styleKey then return end
-    local style = STYLE_MAP[state.styleKey]
+    local style = BarBorders.GetStyle(state.styleKey)
     if not style then return end
     local color = cloneColor(state.color)
     local thickness = tonumber(state.thickness) or 1
@@ -407,6 +407,19 @@ local function buildCategoryFilter(options)
 end
 
 function BarBorders.GetStyle(key)
+    -- LSM-sourced border
+    if addon.IsLSMKey and addon.IsLSMKey(key) then
+        local texturePath = addon.LSMFetch and addon.LSMFetch("border", key)
+        if not texturePath then return nil end
+        return {
+            key = key,
+            label = addon.LSMKeyToName(key),
+            texture = texturePath,
+            category = "shared",
+            thicknessScale = 1.0,
+            paddingMultiplier = 0.50,
+        }
+    end
     return STYLE_MAP[key]
 end
 
@@ -460,7 +473,7 @@ function BarBorders.ApplyToBarFrame(barFrame, styleKey, options)
         return false
     end
 
-    local style = STYLE_MAP[styleKey]
+    local style = BarBorders.GetStyle(styleKey)
     if not style then
         BarBorders.ClearBarFrame(barFrame)
         return false

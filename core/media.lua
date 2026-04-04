@@ -154,10 +154,17 @@ end
 function addon.Media.ResolveBarTexturePath(key)
 	if type(key) ~= "string" or key == "" then return nil end
 	if key == "default" then return nil end
+	-- LSM-sourced statusbar texture
+	if addon.IsLSMKey and addon.IsLSMKey(key) then
+		return addon.LSMFetch and addon.LSMFetch("statusbar", key)
+	end
 	return BAR_TEXTURES[key]
 end
 
 function addon.Media.GetBarTextureDisplayName(key)
+	if addon.IsLSMKey and addon.IsLSMKey(key) then
+		return addon.LSMKeyToName(key)
+	end
 	return BAR_DISPLAY_NAMES[key] or key or ""
 end
 
