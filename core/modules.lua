@@ -76,15 +76,11 @@ addon.MODULE_CATEGORY_ORDER = {
 addon.MODULE_CATEGORIES = {
     actionBars = {
         label = "Action Bars",
+        noMasterToggle = true,
         subToggles = {
-            { id = "actionBar1", label = "Action Bar 1" },
-            { id = "actionBar2", label = "Action Bar 2" },
-            { id = "actionBar3", label = "Action Bar 3" },
-            { id = "actionBar4", label = "Action Bar 4" },
-            { id = "actionBar5", label = "Action Bar 5" },
-            { id = "actionBar6", label = "Action Bar 6" },
-            { id = "actionBar7", label = "Action Bar 7" },
-            { id = "actionBar8", label = "Action Bar 8" },
+            { id = "actionBars18", label = "Action Bars 1-8",
+              members = {"actionBar1","actionBar2","actionBar3","actionBar4",
+                         "actionBar5","actionBar6","actionBar7","actionBar8"} },
             { id = "microBar", label = "Micro Bar" },
             { id = "petBar", label = "Pet Bar" },
             { id = "stanceBar", label = "Stance Bar" },
@@ -92,6 +88,7 @@ addon.MODULE_CATEGORIES = {
     },
     buffsDebuffs = {
         label = "Buffs/Debuffs",
+        noMasterToggle = true,
         subToggles = {
             { id = "buffs", label = "Buffs" },
             { id = "debuffs", label = "Debuffs" },
@@ -103,16 +100,15 @@ addon.MODULE_CATEGORIES = {
     },
     cooldownManager = {
         label = "Cooldown Manager",
+        noMasterToggle = true,
         subToggles = {
             { id = "essentialCooldowns", label = "Essential Cooldowns" },
             { id = "utilityCooldowns", label = "Utility Cooldowns" },
             { id = "trackedBuffs", label = "Tracked Buffs" },
             { id = "trackedBars", label = "Tracked Bars" },
-            { id = "customGroup1", label = "Custom Group 1" },
-            { id = "customGroup2", label = "Custom Group 2" },
-            { id = "customGroup3", label = "Custom Group 3" },
-            { id = "customGroup4", label = "Custom Group 4" },
-            { id = "customGroup5", label = "Custom Group 5" },
+            { id = "customGroups", label = "Custom Groups",
+              members = {"customGroup1","customGroup2","customGroup3",
+                         "customGroup4","customGroup5"} },
         },
     },
     damageMeter = {
@@ -120,10 +116,10 @@ addon.MODULE_CATEGORIES = {
         mutuallyExclusive = true, -- only one sub-toggle can be ON at a time
         noMasterToggle = true, -- no parent ON/OFF; master state derived from sub-toggles
         subToggles = {
-            { id = "damageMeter", label = "Damage Meters v1",
-              infoIcon = { tooltipTitle = "Blizzard Overlay", tooltipText = "Reskins Blizzard's built-in damage meter frames. Heavily customized frames may result in taint errors during raid encounters, use with caution." } },
-            { id = "damageMeterV2", label = "Damage Meters v2",
-              infoIcon = { tooltipTitle = "Custom Frames", tooltipText = "Fully Scoot-owned frames. Zero taint. Multi-column and multi-window support." } },
+            { id = "damageMeter", label = "Damage Meters",
+              versionBadge = { label = "v1", title = "Blizzard Overlay", text = "Reskins Blizzard's built-in damage meter frames. Heavily customized frames may result in taint errors during raid encounters, use with caution." } },
+            { id = "damageMeterV2", label = "Damage Meters",
+              versionBadge = { label = "v2", title = "Custom Frames", text = "Fully Scoot-owned frames. Zero taint. Multi-column and multi-window support." } },
         },
     },
     extraAbilities = {
@@ -131,6 +127,7 @@ addon.MODULE_CATEGORIES = {
     },
     groupFrames = {
         label = "Group Frames",
+        noMasterToggle = true,
         subToggles = {
             { id = "party", label = "Party" },
             { id = "raid", label = "Raid" },
@@ -157,6 +154,7 @@ addon.MODULE_CATEGORIES = {
     },
     unitFrames = {
         label = "Unit Frames",
+        noMasterToggle = true,
         subToggles = {
             { id = "Player", label = "Player" },
             { id = "Target", label = "Target" },
@@ -198,17 +196,19 @@ function addon:IsModuleEnabled(category, subId)
     -- Table form: master + sub-toggles
     if type(val) == "table" then
         local catDef = self.MODULE_CATEGORIES[category]
-        if catDef and catDef.noMasterToggle and not subId then
-            -- Derive master state: enabled if any sub-toggle is on
-            if catDef.subToggles then
-                for _, sub in ipairs(catDef.subToggles) do
-                    local subVal = val[sub.id]
-                    if subVal == true then return true end
-                end
+        local isNoMaster = catDef and catDef.noMasterToggle
+
+        -- noMasterToggle: master state derived from any sub-toggle being true
+        if isNoMaster and not subId then
+            for k, v in pairs(val) do
+                if k ~= "_enabled" and v == true then return true end
             end
             return false
         end
-        if val._enabled == false then return false end  -- master off
+
+        -- Standard master gate (skip for noMasterToggle categories)
+        if not isNoMaster and val._enabled == false then return false end
+
         if subId then
             local sub = val[subId]
             return sub == true                      -- absent sub = disabled
@@ -227,8 +227,12 @@ function addon:SetModuleEnabled(category, subId, value)
     end
     local me = profile.moduleEnabled
 
+    local catDef = self.MODULE_CATEGORIES[category]
+    local isNoMaster = catDef and catDef.noMasterToggle
+
     if not subId then
-        -- Master toggle
+        -- Master toggle (no-op for noMasterToggle categories)
+        if isNoMaster then return end
         if type(me[category]) == "table" then
             me[category]._enabled = value
         else
@@ -239,14 +243,21 @@ function addon:SetModuleEnabled(category, subId, value)
         local current = me[category]
         if type(current) ~= "table" then
             local wasEnabled = current ~= false
-            me[category] = { _enabled = wasEnabled }
+            me[category] = isNoMaster and {} or { _enabled = wasEnabled }
             current = me[category]
             -- Initialize sub-toggles: for mutuallyExclusive categories only the
-            -- first sub-toggle defaults to true; others default to all true.
-            local catDef = self.MODULE_CATEGORIES[category]
+            -- first sub-toggle defaults to true; others default to the master state.
+            -- Grouped sub-toggles expand their members.
             if catDef and catDef.subToggles then
                 for i, sub in ipairs(catDef.subToggles) do
-                    current[sub.id] = not catDef.mutuallyExclusive or (i == 1)
+                    local initVal = not catDef.mutuallyExclusive and wasEnabled or (i == 1)
+                    if sub.members then
+                        for _, memberId in ipairs(sub.members) do
+                            current[memberId] = initVal
+                        end
+                    else
+                        current[sub.id] = initVal
+                    end
                 end
             end
         end

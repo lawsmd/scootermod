@@ -41,6 +41,33 @@ function addon:OnInitialize()
         end
     end
 
+    -- Migration V3: Remove _enabled from newly-noMasterToggle categories.
+    -- If _enabled was false, propagate that to all sub-keys (preserves user intent).
+    do
+        local sv = _G["ScootDB"]
+        if sv and sv.profiles and not (sv.global and sv.global._moduleEnabledNoMasterV3) then
+            local NO_MASTER_CATS = { "actionBars", "buffsDebuffs", "cooldownManager", "groupFrames", "unitFrames" }
+            for _, profileData in pairs(sv.profiles) do
+                if type(profileData) == "table" and type(profileData.moduleEnabled) == "table" then
+                    for _, cat in ipairs(NO_MASTER_CATS) do
+                        local val = profileData.moduleEnabled[cat]
+                        if type(val) == "table" then
+                            if val._enabled == false then
+                                -- Master was off: set all sub-keys to false
+                                for k, _ in pairs(val) do
+                                    if k ~= "_enabled" then val[k] = false end
+                                end
+                            end
+                            val._enabled = nil
+                        end
+                    end
+                end
+            end
+            if not sv.global then sv.global = {} end
+            sv.global._moduleEnabledNoMasterV3 = true
+        end
+    end
+
     -- 1. Create the database first so moduleEnabled is available for component gating.
     --    GetDefaults() does not reference self.Components — safe to call before init.
     self.db = LibStub("AceDB-3.0"):New("ScootDB", self:GetDefaults(), true)
@@ -91,12 +118,10 @@ function addon:OnInitialize()
             if type(v) == "table" then
                 local catDef = self.MODULE_CATEGORIES and self.MODULE_CATEGORIES[k]
                 if catDef and catDef.noMasterToggle then
-                    -- Derive master state from sub-toggles
+                    -- Derive master state from any sub-toggle key being true
                     local anyOn = false
-                    if catDef.subToggles then
-                        for _, sub in ipairs(catDef.subToggles) do
-                            if v[sub.id] ~= false then anyOn = true; break end
-                        end
+                    for subKey, subVal in pairs(v) do
+                        if subKey ~= "_enabled" and subVal == true then anyOn = true; break end
                     end
                     self._activeModules[k] = anyOn
                 else

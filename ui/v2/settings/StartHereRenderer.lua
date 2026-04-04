@@ -1,5 +1,5 @@
 -- StartHereRenderer.lua - Module toggles page ("Start Here")
--- Two-column layout with master/sub toggles for each module category.
+-- Three-column flat layout with always-visible sub-toggles.
 -- Static RELOAD button below the scrollable area inverts when changes are pending.
 local _, addon = ...
 
@@ -10,17 +10,21 @@ local StartHere = {}
 addon.UI.Settings.StartHere = StartHere
 
 --------------------------------------------------------------------------------
--- Constants
+-- Constants (sized for 3-column layout in ~850px scroll content)
 --------------------------------------------------------------------------------
 
-local ROW_HEIGHT = 36
-local INDICATOR_WIDTH = 60
-local INDICATOR_HEIGHT = 22
+local ROW_HEIGHT = 24
+local INDICATOR_WIDTH = 37
+local INDICATOR_HEIGHT = 14
 local INDICATOR_BORDER = 2
-local ROW_PADDING = 12
-local SUB_INDENT = 20
-local COLUMN_GAP = 16
-local RELOAD_AREA_HEIGHT = 80
+local ROW_PADDING = 8
+local SUB_INDENT = 14
+local COLUMN_GAP = 12
+local RELOAD_AREA_HEIGHT = 70
+local LABEL_FONT_SIZE = 10
+local SUB_LABEL_FONT_SIZE = 10
+local INDICATOR_FONT_SIZE = 9
+local NUM_COLUMNS = 3
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -33,16 +37,64 @@ local function deepCopy(t)
     return copy
 end
 
+--- Compute the display row count for a category (header + sub-toggle rows).
+local function CategoryRowCount(catDef)
+    if catDef.subToggles and #catDef.subToggles > 0 then
+        return 1 + #catDef.subToggles  -- header row + one row per sub-toggle
+    end
+    return 1  -- single toggle row
+end
+
+--- Find optimal column split points for N columns that minimize max column height.
+--- Returns an array of split indices: categories[1..splits[1]], [splits[1]+1..splits[2]], etc.
+local function ComputeColumnSplits(categories, numCols)
+    local n = #categories
+    -- Compute heights
+    local heights = {}
+    for i = 1, n do
+        local catDef = addon.MODULE_CATEGORIES[categories[i]]
+        heights[i] = catDef and CategoryRowCount(catDef) or 1
+    end
+    -- Prefix sums
+    local prefix = { [0] = 0 }
+    for i = 1, n do prefix[i] = prefix[i - 1] + heights[i] end
+
+    if numCols == 3 and n >= 3 then
+        -- O(n^2) brute-force: try all (i, j) split points
+        local bestMax = math.huge
+        local bestI, bestJ = 1, 2
+        for i = 1, n - 2 do
+            for j = i + 1, n - 1 do
+                local h1 = prefix[i]
+                local h2 = prefix[j] - prefix[i]
+                local h3 = prefix[n] - prefix[j]
+                local maxH = math.max(h1, math.max(h2, h3))
+                if maxH < bestMax then
+                    bestMax = maxH
+                    bestI = i
+                    bestJ = j
+                end
+            end
+        end
+        return { bestI, bestJ, n }
+    end
+
+    -- Fallback: equal split
+    local splits = {}
+    for c = 1, numCols do
+        splits[c] = math.floor(n * c / numCols)
+    end
+    return splits
+end
+
 --------------------------------------------------------------------------------
 -- Page State (lives for the duration of a single Start Here visit)
 --------------------------------------------------------------------------------
 
 local pageState = {
-    expandedCategory = nil,
     dirty = false,
     rows = {},
-    col1 = nil,
-    col2 = nil,
+    columns = {},   -- array of column frames
     snapshot = nil,
 }
 
@@ -58,7 +110,7 @@ local function CreateIndicator(parent, theme)
     indicator:SetSize(INDICATOR_WIDTH, INDICATOR_HEIGHT)
     indicator:RegisterForClicks("AnyUp")
 
-    -- Border textures (same layout as Toggle.lua)
+    -- Border textures
     local border = {}
 
     local top = indicator:CreateTexture(nil, "BORDER", nil, -1)
@@ -101,22 +153,16 @@ local function CreateIndicator(parent, theme)
 
     -- ON/OFF text
     local text = indicator:CreateFontString(nil, "OVERLAY")
-    text:SetFont(theme:GetFont("BUTTON"), 11, "")
+    text:SetFont(theme:GetFont("BUTTON"), INDICATOR_FONT_SIZE, "")
     text:SetPoint("CENTER", 0, 0)
     text:SetText("OFF")
     text:SetTextColor(dimR, dimG, dimB, 1)
     indicator._text = text
 
-    function indicator:UpdateState(isOn, isDisabled)
+    function indicator:UpdateState(isOn)
         local r, g, b = theme:GetAccentColor()
         local dR, dG, dB = theme:GetDimTextColor()
-        if isDisabled then
-            local a = 0.35
-            self._fill:Hide()
-            self._text:SetText(isOn and "ON" or "OFF")
-            self._text:SetTextColor(dR, dG, dB, a)
-            for _, tex in pairs(self._border) do tex:SetColorTexture(dR, dG, dB, a * 0.5) end
-        elseif isOn then
+        if isOn then
             self._fill:Show()
             self._text:SetText("ON")
             self._text:SetTextColor(0, 0, 0, 1)
@@ -133,13 +179,12 @@ local function CreateIndicator(parent, theme)
 end
 
 --------------------------------------------------------------------------------
--- Module Row (label left, indicator right, optional expand chevron)
+-- Module Row (label left, optional indicator right)
 --------------------------------------------------------------------------------
 
 local function CreateModuleRow(parent, options)
     local theme = options.theme
     local ar, ag, ab = theme:GetAccentColor()
-    local dimR, dimG, dimB = theme:GetDimTextColor()
     local indent = options.indent or 0
 
     local row = CreateFrame("Frame", nil, parent)
@@ -152,84 +197,111 @@ local function CreateModuleRow(parent, options)
     borderLine:SetHeight(1)
     borderLine:SetColorTexture(ar, ag, ab, 0.2)
 
-    -- Hover background
-    local hoverBg = row:CreateTexture(nil, "BACKGROUND", nil, -8)
-    hoverBg:SetPoint("TOPLEFT", indent, 0)
-    hoverBg:SetPoint("BOTTOMRIGHT", 0, 0)
-    hoverBg:SetColorTexture(ar, ag, ab, 0.08)
-    hoverBg:Hide()
+    -- Hover background (only for toggleable rows)
+    local hoverBg
+    if not options.isHeader then
+        hoverBg = row:CreateTexture(nil, "BACKGROUND", nil, -8)
+        hoverBg:SetPoint("TOPLEFT", indent, 0)
+        hoverBg:SetPoint("BOTTOMRIGHT", 0, 0)
+        hoverBg:SetColorTexture(ar, ag, ab, 0.08)
+        hoverBg:Hide()
+    end
 
     -- Label button (covers left portion of row)
     local labelBtn = CreateFrame("Button", nil, row)
     labelBtn:SetPoint("TOPLEFT", row, "TOPLEFT", indent, 0)
     labelBtn:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", indent, 0)
-    if options.hideIndicator then
+    if options.isHeader then
         labelBtn:SetPoint("RIGHT", row, "RIGHT", -ROW_PADDING, 0)
     else
         labelBtn:SetPoint("RIGHT", row, "RIGHT", -(INDICATOR_WIDTH + ROW_PADDING * 2), 0)
     end
     labelBtn:RegisterForClicks("AnyUp")
 
-    -- Label text (with optional chevron for expandable categories)
-    local labelText = options.label or ""
-    if options.isExpandable then
-        -- ▼ (expanded) or ▶ (collapsed) appended to label
-        labelText = labelText .. (options.isExpanded and "  \226\150\188" or "  \226\150\182")
-    end
-
+    -- Label text
+    local fontSize = options.isHeader and LABEL_FONT_SIZE or SUB_LABEL_FONT_SIZE
     local labelFS = labelBtn:CreateFontString(nil, "OVERLAY")
-    labelFS:SetFont(theme:GetFont("LABEL"), 13, "")
+    labelFS:SetFont(theme:GetFont("LABEL"), fontSize, "")
     labelFS:SetPoint("LEFT", ROW_PADDING, 0)
-    labelFS:SetText(labelText)
-    if options.isDisabled then
-        labelFS:SetTextColor(dimR, dimG, dimB, 0.35)
-    else
+    labelFS:SetText(options.label or "")
+    if options.isHeader then
         labelFS:SetTextColor(ar, ag, ab, 1)
+    else
+        labelFS:SetTextColor(ar, ag, ab, 0.75)
     end
 
-    -- Info icon (optional, anchored right of label text)
-    if options.infoIcon and addon.UI and addon.UI.Controls and addon.UI.Controls.CreateInfoIcon then
-        local icon = addon.UI.Controls:CreateInfoIcon({
+    -- Version badge info icon (e.g., "v1" / "v2" — replaces text info icons)
+    if options.versionBadge and addon.UI and addon.UI.Controls and addon.UI.Controls.CreateInfoIcon then
+        local badge = addon.UI.Controls:CreateInfoIcon({
             parent = row,
-            tooltipText = options.infoIcon.tooltipText,
-            tooltipTitle = options.infoIcon.tooltipTitle,
+            tooltipTitle = options.versionBadge.title or "",
+            tooltipText = options.versionBadge.text or "",
             size = 14,
+            iconType = "info",
         })
-        icon:SetPoint("LEFT", labelFS, "RIGHT", 4, 0)
+        if badge._iconText then
+            badge._iconText:SetText(options.versionBadge.label or "")
+            local fontPath = badge._iconText:GetFont()
+            if fontPath then
+                pcall(badge._iconText.SetFont, badge._iconText, fontPath, 7, "OUTLINE")
+            end
+        end
+        badge:SetPoint("LEFT", labelFS, "RIGHT", 4, 0)
     end
 
-    -- ON/OFF indicator (right side) — hidden for header-only rows
+    -- ON/OFF indicator (right side) — hidden for header rows
     local indicator
-    if not options.hideIndicator then
+    if not options.isHeader then
         indicator = CreateIndicator(row, theme)
         indicator:SetPoint("RIGHT", row, "RIGHT", -ROW_PADDING, 0)
-        indicator:UpdateState(options.isOn, options.isDisabled)
+        indicator:UpdateState(options.isOn)
 
-        -- Click: indicator always toggles on/off
         indicator:SetScript("OnClick", function()
-            if not options.isDisabled and options.onToggle then options.onToggle() end
+            if options.onToggle then options.onToggle() end
         end)
     end
 
-    -- Click: label expands (if expandable) or toggles (if not)
+    -- Click: label toggles (for non-header rows)
     labelBtn:SetScript("OnClick", function()
-        if options.isDisabled then return end
-        if options.isExpandable and options.onExpand then
-            options.onExpand()
-        elseif options.onToggle then
+        if not options.isHeader and options.onToggle then
             options.onToggle()
         end
     end)
 
-    -- Hover handlers (shared across label and indicator)
-    labelBtn:SetScript("OnEnter", function() hoverBg:Show() end)
-    labelBtn:SetScript("OnLeave", function() hoverBg:Hide() end)
-    if indicator then
-        indicator:SetScript("OnEnter", function() hoverBg:Show() end)
-        indicator:SetScript("OnLeave", function() hoverBg:Hide() end)
+    -- Hover handlers
+    if hoverBg then
+        labelBtn:SetScript("OnEnter", function() hoverBg:Show() end)
+        labelBtn:SetScript("OnLeave", function() hoverBg:Hide() end)
+        if indicator then
+            indicator:SetScript("OnEnter", function() hoverBg:Show() end)
+            indicator:SetScript("OnLeave", function() hoverBg:Hide() end)
+        end
     end
 
     return row
+end
+
+--------------------------------------------------------------------------------
+-- Grouped Toggle Helpers
+--------------------------------------------------------------------------------
+
+--- Read the enabled state for a sub-toggle (handles grouped members).
+local function IsSubToggleOn(catId, sub)
+    if sub.members then
+        return addon:IsModuleEnabled(catId, sub.members[1])
+    end
+    return addon:IsModuleEnabled(catId, sub.id)
+end
+
+--- Toggle a sub-toggle (handles grouped members).
+local function SetSubToggle(catId, sub, value)
+    if sub.members then
+        for _, memberId in ipairs(sub.members) do
+            addon:SetModuleEnabled(catId, memberId, value)
+        end
+    else
+        addon:SetModuleEnabled(catId, sub.id, value)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -243,66 +315,40 @@ local function BuildColumnContent(column, categories, startIdx, endIdx, state, t
         local catDef = addon.MODULE_CATEGORIES[catId]
         if not catDef then break end
 
-        local isOn = addon:IsModuleEnabled(catId)
         local hasSubToggles = catDef.subToggles and #catDef.subToggles > 0
-        local isExpanded = state.expandedCategory == catId
 
-        -- Master category row
-        local isNoMaster = catDef.noMasterToggle
-        local masterOpts = {
-            label = catDef.label,
-            isOn = isOn,
-            isExpandable = hasSubToggles,
-            isExpanded = isExpanded,
-            theme = theme,
-            onExpand = function()
-                if state.expandedCategory == catId then
-                    state.expandedCategory = nil
-                else
-                    state.expandedCategory = catId
-                end
-                rebuild()
-            end,
-        }
-        if isNoMaster then
-            masterOpts.hideIndicator = true
-        else
-            masterOpts.onToggle = function()
-                addon:SetModuleEnabled(catId, nil, not addon:IsModuleEnabled(catId))
-                state.dirty = true
-                if state.registerGuard then state.registerGuard() end
-                rebuild()
-            end
-        end
-        local masterRow = CreateModuleRow(column, masterOpts)
-        masterRow:SetPoint("TOPLEFT", column, "TOPLEFT", 0, -yOffset)
-        masterRow:SetPoint("TOPRIGHT", column, "TOPRIGHT", 0, -yOffset)
-        table.insert(state.rows, masterRow)
-        yOffset = yOffset + ROW_HEIGHT
+        if hasSubToggles then
+            -- Header row (no toggle indicator)
+            local headerRow = CreateModuleRow(column, {
+                label = catDef.label,
+                isHeader = true,
+                theme = theme,
+            })
+            headerRow:SetPoint("TOPLEFT", column, "TOPLEFT", 0, -yOffset)
+            headerRow:SetPoint("TOPRIGHT", column, "TOPRIGHT", 0, -yOffset)
+            table.insert(state.rows, headerRow)
+            yOffset = yOffset + ROW_HEIGHT
 
-        -- Sub-toggle rows (when expanded)
-        if isExpanded and hasSubToggles then
+            -- Sub-toggle rows (always visible)
             for _, sub in ipairs(catDef.subToggles) do
-                local subIsOn = addon:IsModuleEnabled(catId, sub.id)
+                local subIsOn = IsSubToggleOn(catId, sub)
                 local subRow = CreateModuleRow(column, {
                     label = sub.label,
                     isOn = subIsOn,
                     indent = SUB_INDENT,
-                    isDisabled = not isNoMaster and not isOn,
-                    infoIcon = sub.infoIcon,
+                    versionBadge = sub.versionBadge,
                     theme = theme,
                     onToggle = function()
-                        if not isNoMaster and not addon:IsModuleEnabled(catId) then return end
-                        local newValue = not addon:IsModuleEnabled(catId, sub.id)
+                        local newValue = not IsSubToggleOn(catId, sub)
                         -- Mutually exclusive: turning one ON turns all others OFF
                         if catDef.mutuallyExclusive and newValue then
                             for _, other in ipairs(catDef.subToggles) do
                                 if other.id ~= sub.id then
-                                    addon:SetModuleEnabled(catId, other.id, false)
+                                    SetSubToggle(catId, other, false)
                                 end
                             end
                         end
-                        addon:SetModuleEnabled(catId, sub.id, newValue)
+                        SetSubToggle(catId, sub, newValue)
                         state.dirty = true
                         if state.registerGuard then state.registerGuard() end
                         rebuild()
@@ -313,6 +359,24 @@ local function BuildColumnContent(column, categories, startIdx, endIdx, state, t
                 table.insert(state.rows, subRow)
                 yOffset = yOffset + ROW_HEIGHT
             end
+        else
+            -- Simple category: single row with toggle
+            local isOn = addon:IsModuleEnabled(catId)
+            local simpleRow = CreateModuleRow(column, {
+                label = catDef.label,
+                isOn = isOn,
+                theme = theme,
+                onToggle = function()
+                    addon:SetModuleEnabled(catId, nil, not addon:IsModuleEnabled(catId))
+                    state.dirty = true
+                    if state.registerGuard then state.registerGuard() end
+                    rebuild()
+                end,
+            })
+            simpleRow:SetPoint("TOPLEFT", column, "TOPLEFT", 0, -yOffset)
+            simpleRow:SetPoint("TOPRIGHT", column, "TOPRIGHT", 0, -yOffset)
+            table.insert(state.rows, simpleRow)
+            yOffset = yOffset + ROW_HEIGHT
         end
     end
     column:SetHeight(math.max(yOffset, 1))
@@ -349,11 +413,11 @@ local function EnsureReloadArea(panel, contentPane)
     local btn = Controls:CreateButton({
         parent = area,
         text = "RELOAD",
-        width = 160,
-        height = 34,
-        fontSize = 14,
+        width = 140,
+        height = 30,
+        fontSize = 13,
     })
-    btn:SetPoint("TOP", area, "TOP", 0, -16)
+    btn:SetPoint("TOP", area, "TOP", 0, -14)
     btn:SetScript("OnClick", function()
         if ReloadUI then ReloadUI() end
     end)
@@ -361,8 +425,8 @@ local function EnsureReloadArea(panel, contentPane)
 
     -- Explainer text
     local explainer = area:CreateFontString(nil, "OVERLAY")
-    explainer:SetFont(theme:GetFont("VALUE"), 11, "")
-    explainer:SetPoint("TOP", btn, "BOTTOM", 0, -9)
+    explainer:SetFont(theme:GetFont("VALUE"), 10, "")
+    explainer:SetPoint("TOP", btn, "BOTTOM", 0, -7)
     explainer:SetText("To toggle the selected components")
     explainer:SetTextColor(dimR, dimG, dimB, 0.8)
     explainer:SetJustifyH("CENTER")
@@ -439,10 +503,12 @@ local function Cleanup(panel)
     if wipe then wipe(pageState.rows) else pageState.rows = {} end
 
     -- Destroy columns
-    if pageState.col1 then pageState.col1:Hide(); pageState.col1:SetParent(nil); pageState.col1 = nil end
-    if pageState.col2 then pageState.col2:Hide(); pageState.col2:SetParent(nil); pageState.col2 = nil end
+    for _, col in ipairs(pageState.columns) do
+        col:Hide()
+        col:SetParent(nil)
+    end
+    if wipe then wipe(pageState.columns) else pageState.columns = {} end
 
-    pageState.expandedCategory = nil
     pageState.dirty = false
     pageState.snapshot = nil
     pageState.registerGuard = nil
@@ -460,7 +526,6 @@ function StartHere.Render(panel, scrollContent)
     local theme = addon.UI.Theme
 
     -- Reset state for this visit
-    pageState.expandedCategory = nil
     pageState.dirty = false
 
     -- Snapshot moduleEnabled so "Discard Changes" can restore it
@@ -497,7 +562,6 @@ function StartHere.Render(panel, scrollContent)
     UpdateReloadButtonVisual(reloadArea, false)
 
     -- Shrink scroll frame to leave room for reload area
-    -- Original: BOTTOMRIGHT offset = -(8+8+8), 8 → -24, 8
     scrollFrame:SetPoint("BOTTOMRIGHT", contentPane, "BOTTOMRIGHT", -24, 8 + RELOAD_AREA_HEIGHT)
     if contentPane._scrollbar then
         contentPane._scrollbar:SetPoint("BOTTOMRIGHT", contentPane, "BOTTOMRIGHT", -8, 24 + RELOAD_AREA_HEIGHT)
@@ -529,7 +593,50 @@ function StartHere.Render(panel, scrollContent)
         end
     end
 
-    -- Rebuild function (called on toggle/expand/collapse)
+    -- Panel close guard: intercept close/ESC/combat when dirty.
+    -- HookScript persists across visits; pageState.dirty gates behavior.
+    if not panel._startHereOnHideHooked then
+        panel._startHereOnHideHooked = true
+        panel.frame:HookScript("OnHide", function(self)
+            if not pageState.dirty then return end
+            if pageState._hideGuardActive then return end
+
+            local UIPanel = addon.UI.SettingsPanel
+            if UIPanel._closedByCombat or (InCombatLockdown and InCombatLockdown()) then
+                -- Combat: silently discard changes and clean up
+                local profile = addon.db and addon.db.profile
+                if profile and pageState.snapshot then
+                    profile.moduleEnabled = deepCopy(pageState.snapshot)
+                end
+                if panel._startHereCleanup then panel._startHereCleanup() end
+                return
+            end
+
+            -- User close (close button / ESC): re-show and prompt
+            pageState._hideGuardActive = true
+            self:Show()
+            pageState._hideGuardActive = false
+
+            addon.Dialogs:Show("SCOOT_START_HERE_RELOAD", {
+                cancelWidth = 140,
+                onAccept = function()
+                    ReloadUI()
+                end,
+                onCancel = function()
+                    local profile = addon.db and addon.db.profile
+                    if profile and pageState.snapshot then
+                        profile.moduleEnabled = deepCopy(pageState.snapshot)
+                    end
+                    if panel._startHereCleanup then panel._startHereCleanup() end
+                    pageState._hideGuardActive = true
+                    self:Hide()
+                    pageState._hideGuardActive = false
+                end,
+            })
+        end)
+    end
+
+    -- Rebuild function (called on toggle changes)
     local function rebuild()
         -- Destroy existing rows and columns
         for _, row in ipairs(pageState.rows) do
@@ -537,12 +644,15 @@ function StartHere.Render(panel, scrollContent)
             row:SetParent(nil)
         end
         if wipe then wipe(pageState.rows) else pageState.rows = {} end
-        if pageState.col1 then pageState.col1:Hide(); pageState.col1:SetParent(nil) end
-        if pageState.col2 then pageState.col2:Hide(); pageState.col2:SetParent(nil) end
+        for _, col in ipairs(pageState.columns) do
+            col:Hide()
+            col:SetParent(nil)
+        end
+        if wipe then wipe(pageState.columns) else pageState.columns = {} end
 
         -- Intro text (recreated each rebuild so it survives row cleanup)
         local introFS = scrollContent:CreateFontString(nil, "OVERLAY")
-        introFS:SetFont(theme:GetFont("VALUE"), 12, "")
+        introFS:SetFont(theme:GetFont("VALUE"), 11, "")
         introFS:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", ROW_PADDING, 0)
         local availWidth = (scrollContent:GetWidth() or 300) - ROW_PADDING * 2
         introFS:SetWidth(availWidth)
@@ -552,7 +662,7 @@ function StartHere.Render(panel, scrollContent)
         introFS:SetTextColor(theme:GetDimTextColor())
         table.insert(pageState.rows, introFS)
 
-        -- Separator below intro text (replaces the hidden header separator)
+        -- Separator below intro text
         local sep = scrollContent:CreateTexture(nil, "BORDER", nil, -1)
         sep:SetHeight(1)
         sep:SetPoint("TOPLEFT", introFS, "BOTTOMLEFT", -4, -6)
@@ -561,26 +671,40 @@ function StartHere.Render(panel, scrollContent)
         sep:SetColorTexture(ar, ag, ab, 0.3)
         table.insert(pageState.rows, sep)
 
-        -- Create columns (below separator)
-        local col1 = CreateFrame("Frame", nil, scrollContent)
-        col1:SetPoint("TOPLEFT", sep, "BOTTOMLEFT", -8, -4)
-        col1:SetPoint("RIGHT", scrollContent, "CENTER", -(COLUMN_GAP / 2), 0)
-        pageState.col1 = col1
-
-        local col2 = CreateFrame("Frame", nil, scrollContent)
-        col2:SetPoint("TOPLEFT", sep, "BOTTOM", COLUMN_GAP / 2, -4)
-        col2:SetPoint("RIGHT", scrollContent, "RIGHT", 0, 0)
-        pageState.col2 = col2
-
+        -- Compute optimal column splits
         local categories = addon.MODULE_CATEGORY_ORDER
-        local half = math.ceil(#categories / 2)
+        local splits = ComputeColumnSplits(categories, NUM_COLUMNS)
 
-        BuildColumnContent(col1, categories, 1, half, pageState, theme, rebuild)
-        BuildColumnContent(col2, categories, half + 1, #categories, pageState, theme, rebuild)
+        -- Compute column width
+        local scrollWidth = scrollContent:GetWidth() or 850
+        local colWidth = (scrollWidth - (NUM_COLUMNS - 1) * COLUMN_GAP) / NUM_COLUMNS
 
-        -- Set scroll content height: intro text + 6px gap + 1px sep + 4px gap + tallest column + padding
-        local introUsed = (introFS:GetStringHeight() or 16) + 6 + 1 + 4
-        scrollContent:SetHeight(introUsed + math.max(col1:GetHeight(), col2:GetHeight()) + 8)
+        -- Create columns
+        local prevCol
+        for c = 1, NUM_COLUMNS do
+            local col = CreateFrame("Frame", nil, scrollContent)
+            col:SetWidth(colWidth)
+            if c == 1 then
+                col:SetPoint("TOPLEFT", sep, "BOTTOMLEFT", -8, -4)
+            else
+                col:SetPoint("TOPLEFT", prevCol, "TOPRIGHT", COLUMN_GAP, 0)
+            end
+            table.insert(pageState.columns, col)
+            prevCol = col
+
+            local startIdx = c == 1 and 1 or (splits[c - 1] + 1)
+            local endIdx = splits[c]
+            BuildColumnContent(col, categories, startIdx, endIdx, pageState, theme, rebuild)
+        end
+
+        -- Set scroll content height
+        local introUsed = (introFS:GetStringHeight() or 14) + 6 + 1 + 4
+        local maxColHeight = 0
+        for _, col in ipairs(pageState.columns) do
+            local h = col:GetHeight()
+            if h > maxColHeight then maxColHeight = h end
+        end
+        scrollContent:SetHeight(introUsed + maxColHeight + 8)
 
         -- Update reload button visual
         UpdateReloadButtonVisual(reloadArea, pageState.dirty)
