@@ -206,6 +206,7 @@ ui/v2/settings/cdm/TrackedBuffsRenderer.lua
 ui/v2/settings/cdm/TrackedBarsRenderer.lua
 ui/v2/settings/cdm/CustomGroupsRenderer.lua
 ui/v2/settings/cdm/CustomGroupsTab.lua
+ui/v2/settings/cdm/SpellbookOverlay.lua
 ui/v2/settings/classauras/ClassAurasRenderer.lua
 ui/v2/settings/actionbars/ActionBarRenderer.lua
 ui/v2/settings/actionbars/MicroBarRenderer.lua

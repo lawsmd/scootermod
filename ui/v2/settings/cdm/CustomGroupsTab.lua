@@ -1046,6 +1046,17 @@ local function InjectScootTab()
             end
         end
     end)
+
+    -- Expose for external callers (e.g. spellbook overlay button)
+    addon.ActivateCDMCustomGroupsTab = function()
+        ActivateScootTab(cdmFrame, content, blizzElements, tab)
+    end
+
+    -- Check if someone requested activation before injection was ready
+    if addon._pendingCDMCustomGroupsTabActivation then
+        addon._pendingCDMCustomGroupsTabActivation = nil
+        ActivateScootTab(cdmFrame, content, blizzElements, tab)
+    end
 end
 
 --------------------------------------------------------------------------------
