@@ -26,7 +26,8 @@ end
 --------------------------------------------------------------------------------
 
 local function getDB()
-    return addon.db and addon.db.profile and addon.db.profile.bossWarnings
+    local profile = addon.db and addon.db.profile
+    return profile and rawget(profile, "bossWarnings") or nil
 end
 
 local function setDB(key, value)

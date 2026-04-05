@@ -228,7 +228,6 @@ function addon:GetDefaults()
                 tooltip = false,
                 unitFrames = false,
             },
-            bossWarnings = {},
             groupFrames = {
                 raid = {
                     healthBarTexture = "default",

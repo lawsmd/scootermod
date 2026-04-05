@@ -50,7 +50,8 @@ end
 --- Preserves Blizzard's font size (varies per severity, includes ScaleTextToFit).
 local function applyTextStyling(fontString)
     if not fontString then return end
-    local db = addon.db and addon.db.profile and addon.db.profile.bossWarnings
+    local profile = addon.db and addon.db.profile
+    local db = profile and rawget(profile, "bossWarnings") or nil
     if not db then return end
 
     local fontFace = db.textFontFace
