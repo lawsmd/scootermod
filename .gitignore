@@ -1,3 +1,6 @@
+# Claude Code
+.claude/
+
 # WoW AddOn build artifacts
 *_retail_/Cache/**
 *_retail_/Logs/**

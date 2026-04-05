@@ -292,6 +292,414 @@ function ObjectiveTracker.Render(panel, scrollContent)
         end,
     })
 
+    -- -----------------------------------------------------------------------
+    -- Collapsible section: Dungeon Tracker
+    -- -----------------------------------------------------------------------
+
+    -- Helpers to read/write from the dungeonTracker sub-table
+    local function getDTConfig()
+        local comp = getComponent()
+        local db = comp and comp.db
+        if db and type(db.dungeonTracker) == "table" then
+            return db.dungeonTracker
+        end
+    end
+
+    local function ensureDTConfig()
+        local comp = getComponent()
+        if not comp then return nil end
+        local db = comp.db
+        if not db then return nil end
+        local t = rawget(db, "dungeonTracker")
+        if not t then
+            t = {}
+            rawset(db, "dungeonTracker", t)
+        end
+        return t
+    end
+
+    -- Generic read/write helpers for nested DT sub-tables (stageText, keyLevelText, timerText)
+    local function getDTSubConfig(key)
+        local dt = getDTConfig()
+        if dt and type(dt[key]) == "table" then
+            return dt[key]
+        end
+    end
+
+    local function ensureDTSubConfig(key)
+        local dt = ensureDTConfig()
+        if not dt then return nil end
+        local t = rawget(dt, key)
+        if not t then
+            t = {}
+            rawset(dt, key, t)
+        end
+        return t
+    end
+
+    local function applyDT()
+        if addon and addon.ApplyStyles then
+            addon:ApplyStyles()
+        end
+    end
+
+    builder:AddCollapsibleSection({
+        title = "Dungeon Tracker",
+        componentId = "objectiveTracker",
+        sectionKey = "dungeonTracker",
+        defaultExpanded = false,
+        buildContent = function(contentFrame, inner)
+            -- Toggle ABOVE the tabbed section
+            inner:AddToggle({
+                label = "Collapse Other Sections when Key Starts",
+                description = "Automatically collapse all other Objective Tracker sections (quests, campaigns, etc.) when a Mythic+ keystone run begins.",
+                get = function()
+                    local dt = getDTConfig()
+                    return dt and dt.collapseOtherOnKeyStart or false
+                end,
+                set = function(val)
+                    local dt = ensureDTConfig()
+                    if dt then
+                        dt.collapseOtherOnKeyStart = val and true or false
+                        applyDT()
+                    end
+                end,
+            })
+
+            -- Tabbed section: Instance Name | Key Level | Timer Text | Visibility
+            -- Helper to build a standard text-styling tab (Font, Size, Style, Color)
+            local function buildDTTextTab(tabBuilder, dbKey, defaults)
+                tabBuilder:AddFontSelector({
+                    label = "Font",
+                    description = "The font used for this text element.",
+                    get = function()
+                        local t = getDTSubConfig(dbKey)
+                        return (t and t.fontFace) or defaults.fontFace
+                    end,
+                    set = function(fontKey)
+                        local t = ensureDTSubConfig(dbKey)
+                        if t then
+                            t.fontFace = fontKey or defaults.fontFace
+                            applyDT()
+                        end
+                    end,
+                })
+
+                tabBuilder:AddSlider({
+                    label = "Font Size",
+                    description = "Size of this text element.",
+                    min = 6,
+                    max = 32,
+                    step = 1,
+                    get = function()
+                        local t = getDTSubConfig(dbKey)
+                        return (t and t.size) or defaults.size
+                    end,
+                    set = function(v)
+                        local t = ensureDTSubConfig(dbKey)
+                        if t then
+                            t.size = v
+                            applyDT()
+                        end
+                    end,
+                    minLabel = "6",
+                    maxLabel = "32",
+                })
+
+                tabBuilder:AddSelector({
+                    label = "Font Style",
+                    description = "The outline style for this text.",
+                    values = fontStyleValues,
+                    order = fontStyleOrder,
+                    get = function()
+                        local t = getDTSubConfig(dbKey)
+                        return (t and t.style) or defaults.style
+                    end,
+                    set = function(v)
+                        local t = ensureDTSubConfig(dbKey)
+                        if t then
+                            t.style = v or defaults.style
+                            applyDT()
+                        end
+                    end,
+                })
+
+                tabBuilder:AddSelectorColorPicker({
+                    label = "Font Color",
+                    description = "Color mode for this text. Select 'Custom' to choose a specific color.",
+                    values = fontColorValues,
+                    order = fontColorOrder,
+                    get = function()
+                        local t = getDTSubConfig(dbKey)
+                        return (t and t.colorMode) or defaults.colorMode
+                    end,
+                    set = function(v)
+                        local t = ensureDTSubConfig(dbKey)
+                        if t then
+                            t.colorMode = v or defaults.colorMode
+                            applyDT()
+                        end
+                    end,
+                    getColor = function()
+                        local t = getDTSubConfig(dbKey)
+                        local c = (t and type(t.color) == "table" and t.color) or defaults.color
+                        return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                    end,
+                    setColor = function(r, g, b, a)
+                        local t = ensureDTSubConfig(dbKey)
+                        if t then
+                            t.color = { r or 1, g or 1, b or 1, a or 1 }
+                            applyDT()
+                        end
+                    end,
+                    customValue = "custom",
+                    hasAlpha = true,
+                })
+
+                tabBuilder:Finalize()
+            end
+
+            inner:AddTabbedSection({
+                tabs = {
+                    { key = "instanceName", label = "Instance Name" },
+                    { key = "keyLevel", label = "Key Level" },
+                    { key = "timerText", label = "Timer Text" },
+                    { key = "trashPercent", label = "Trash %" },
+                    { key = "affixIcons", label = "Affix Icons" },
+                    { key = "timerBar", label = "Timer Bar" },
+                    { key = "visibility", label = "Visibility" },
+                },
+                componentId = "objectiveTracker",
+                sectionKey = "dungeonTrackerTabs",
+                buildContent = {
+                    instanceName = function(tabContent, tabBuilder)
+                        buildDTTextTab(tabBuilder, "stageText", {
+                            fontFace = "FRIZQT__",
+                            size = 18,
+                            style = "NONE",
+                            colorMode = "default",
+                            color = { 1, 0.914, 0.682, 1 },
+                        })
+                    end,
+                    keyLevel = function(tabContent, tabBuilder)
+                        buildDTTextTab(tabBuilder, "keyLevelText", {
+                            fontFace = "FRIZQT__",
+                            size = 14,
+                            style = "NONE",
+                            colorMode = "default",
+                            color = { 1, 1, 1, 1 },
+                        })
+                    end,
+                    timerText = function(tabContent, tabBuilder)
+                        buildDTTextTab(tabBuilder, "timerText", {
+                            fontFace = "FRIZQT__",
+                            size = 20,
+                            style = "NONE",
+                            colorMode = "default",
+                            color = { 1, 1, 1, 1 },
+                        })
+                    end,
+                    trashPercent = function(tabContent, tabBuilder)
+                        buildDTTextTab(tabBuilder, "trashPercentText", {
+                            fontFace = "FRIZQT__",
+                            size = 14,
+                            style = "NONE",
+                            colorMode = "default",
+                            color = { 1, 1, 1, 1 },
+                        })
+                    end,
+                    affixIcons = function(tabContent, tabBuilder)
+                        tabBuilder:AddSlider({
+                            label = "Icon Scale",
+                            description = "Scale the affix icons up or down.",
+                            min = 0.5,
+                            max = 3.0,
+                            step = 0.05,
+                            get = function()
+                                local dt = getDTConfig()
+                                return (dt and dt.affixIconScale) or 1.0
+                            end,
+                            set = function(v)
+                                local dt = ensureDTConfig()
+                                if dt then
+                                    dt.affixIconScale = v
+                                    applyDT()
+                                end
+                            end,
+                            minLabel = "50%",
+                            maxLabel = "300%",
+                            precision = 0,
+                            displayMultiplier = 100,
+                            displaySuffix = "%",
+                        })
+
+                        -- Border Style selector
+                        local affixBorderValues, affixBorderOrder = Helpers.getIconBorderOptions({
+                            { "default", "Default" },
+                            { "none", "No Border" },
+                        })
+
+                        tabBuilder:AddSelector({
+                            label = "Border Style",
+                            description = "Choose the border style for affix icons.",
+                            values = affixBorderValues,
+                            order = affixBorderOrder,
+                            get = function()
+                                local dt = getDTConfig()
+                                return (dt and dt.affixBorderStyle) or "default"
+                            end,
+                            set = function(v)
+                                local dt = ensureDTConfig()
+                                if dt then
+                                    dt.affixBorderStyle = v
+                                    applyDT()
+                                end
+                            end,
+                        })
+
+                        -- Border Tint toggle + color picker
+                        tabBuilder:AddToggleColorPicker({
+                            label = "Border Tint",
+                            description = "Apply a custom tint color to the affix icon border.",
+                            get = function()
+                                local dt = getDTConfig()
+                                return dt and dt.affixBorderTintEnable or false
+                            end,
+                            set = function(val)
+                                local dt = ensureDTConfig()
+                                if dt then
+                                    dt.affixBorderTintEnable = val and true or false
+                                    applyDT()
+                                end
+                            end,
+                            getColor = function()
+                                local dt = getDTConfig()
+                                local c = dt and type(dt.affixBorderTintColor) == "table" and dt.affixBorderTintColor
+                                if c then
+                                    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                                end
+                                return 1, 1, 1, 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                local dt = ensureDTConfig()
+                                if dt then
+                                    dt.affixBorderTintColor = { r or 1, g or 1, b or 1, a or 1 }
+                                    applyDT()
+                                end
+                            end,
+                            hasAlpha = true,
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                    timerBar = function(tabContent, tabBuilder)
+                        tabBuilder:AddToggle({
+                            label = "Hide Timer Bar",
+                            description = "Hide the Mythic+ timer progress bar entirely.",
+                            get = function()
+                                local dt = getDTConfig()
+                                return dt and dt.hideTimerBar or false
+                            end,
+                            set = function(val)
+                                local dt = ensureDTConfig()
+                                if dt then
+                                    dt.hideTimerBar = val and true or false
+                                    applyDT()
+                                end
+                            end,
+                        })
+
+                        -- Foreground (bar fill)
+                        tabBuilder:AddDualBarStyleRow({
+                            label = "Foreground",
+                            getTexture = function()
+                                local dt = getDTConfig()
+                                return (dt and dt.timerBarForegroundTexture) or "default"
+                            end,
+                            setTexture = function(v)
+                                local dt = ensureDTConfig()
+                                if dt then
+                                    dt.timerBarForegroundTexture = v
+                                    applyDT()
+                                end
+                            end,
+                            colorValues = {
+                                default = "Default",
+                                original = "Texture Original",
+                                custom = "Custom",
+                            },
+                            colorOrder = { "default", "original", "custom" },
+                            getColorMode = function()
+                                local dt = getDTConfig()
+                                return (dt and dt.timerBarForegroundColorMode) or "default"
+                            end,
+                            setColorMode = function(v)
+                                local dt = ensureDTConfig()
+                                if dt then
+                                    dt.timerBarForegroundColorMode = v
+                                    applyDT()
+                                end
+                            end,
+                            getColor = function()
+                                local dt = getDTConfig()
+                                local c = (dt and type(dt.timerBarForegroundColor) == "table" and dt.timerBarForegroundColor) or { 1, 1, 1, 1 }
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                local dt = ensureDTConfig()
+                                if dt then
+                                    dt.timerBarForegroundColor = { r or 1, g or 1, b or 1, a or 1 }
+                                    applyDT()
+                                end
+                            end,
+                            customColorValue = "custom",
+                            hasAlpha = true,
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                    visibility = function(tabContent, tabBuilder)
+                        tabBuilder:AddToggle({
+                            label = "Hide Stage Background",
+                            description = "Hide the background behind the dungeon/stage name header (non-M+ scenarios).",
+                            get = function()
+                                local dt = getDTConfig()
+                                return dt and dt.hideStageBackground or false
+                            end,
+                            set = function(val)
+                                local dt = ensureDTConfig()
+                                if dt then
+                                    dt.hideStageBackground = val and true or false
+                                    applyDT()
+                                end
+                            end,
+                        })
+
+                        tabBuilder:AddToggle({
+                            label = "Hide Timer Background",
+                            description = "Hide the background textures behind the Mythic+ timer display.",
+                            get = function()
+                                local dt = getDTConfig()
+                                return dt and dt.hideTimerBackground or false
+                            end,
+                            set = function(val)
+                                local dt = ensureDTConfig()
+                                if dt then
+                                    dt.hideTimerBackground = val and true or false
+                                    applyDT()
+                                end
+                            end,
+                        })
+
+                        tabBuilder:Finalize()
+                    end,
+                },
+            })
+
+            inner:Finalize()
+        end,
+    })
+
     -- Collapsible section: Visibility
     builder:AddCollapsibleSection({
         title = "Visibility",

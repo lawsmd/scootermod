@@ -733,10 +733,425 @@ local function ApplyObjectiveTrackerScale(self)
     pcall(tracker.SetScale, tracker, scale)
 end
 
+-- ---------------------------------------------------------------------------
+-- Dungeon Tracker (ScenarioObjectiveTracker styling)
+-- ---------------------------------------------------------------------------
+
+-- Returns the dungeonTracker sub-table from the component DB, or nil if
+-- the user hasn't configured anything (Zero-Touch).
+local function GetDungeonTrackerDB(componentSelf)
+    if componentSelf._ScootDBProxy and componentSelf.db == componentSelf._ScootDBProxy then
+        return nil
+    end
+    local db = componentSelf.db
+    if type(db) ~= "table" then return nil end
+    return rawget(db, "dungeonTracker")
+end
+
+local function GetStageBlock()
+    local scenario = _G.ScenarioObjectiveTracker
+    if not scenario then return nil end
+    return scenario.StageBlock
+end
+
+local function GetChallengeModeBlock()
+    local scenario = _G.ScenarioObjectiveTracker
+    if not scenario then return nil end
+    return scenario.ChallengeModeBlock
+end
+
+-- Approximate Blizzard default green for ChallengeMode-TimerFill atlas.
+-- The atlas bakes this green gradient into the texture; no SetStatusBarColor is used.
+-- When a custom texture replaces the atlas, this color is applied to match the stock look.
+local BLIZZARD_TIMER_BAR_COLOR = { 0.07, 0.76, 0.0, 1.0 }
+
+-- Apply font/size/style/color to a FontString from a config sub-table.
+-- Shared by all dungeon tracker text tabs.
+local function ApplyDTTextConfig(fs, cfg)
+    if not fs or type(cfg) ~= "table" then return end
+    local sizeOverride = tonumber(cfg.size)
+    ApplyFontFaceAndStylePreservingSize(fs, cfg, sizeOverride)
+    ApplyColorWithDefaultRestore(fs, cfg)
+end
+
+local function ApplyDungeonTrackerStageTextStyling(dtDB)
+    if not dtDB then return end
+    local cfg = rawget(dtDB, "stageText")
+    if type(cfg) ~= "table" then return end
+
+    local stageBlock = GetStageBlock()
+    if stageBlock and stageBlock.Stage then
+        ApplyDTTextConfig(stageBlock.Stage, cfg)
+    end
+end
+
+local function ApplyDungeonTrackerKeyLevelTextStyling(dtDB)
+    if not dtDB then return end
+    local cfg = rawget(dtDB, "keyLevelText")
+    if type(cfg) ~= "table" then return end
+
+    local cmBlock = GetChallengeModeBlock()
+    if cmBlock and cmBlock.Level then
+        ApplyDTTextConfig(cmBlock.Level, cfg)
+    end
+end
+
+local function ApplyDungeonTrackerTimerTextStyling(dtDB)
+    if not dtDB then return end
+    local cfg = rawget(dtDB, "timerText")
+    if type(cfg) ~= "table" then return end
+
+    local cmBlock = GetChallengeModeBlock()
+    if cmBlock and cmBlock.TimeLeft then
+        ApplyDTTextConfig(cmBlock.TimeLeft, cfg)
+    end
+end
+
+-- Helper: hide or restore a texture via alpha with baseline capture.
+local function DTSetTextureHidden(tex, hidden)
+    if not tex then return end
+    local state = getState(tex)
+    if hidden then
+        if state and not state.dtBaseAlpha then
+            if tex.GetAlpha then
+                local ok, a = pcall(tex.GetAlpha, tex)
+                if ok and a ~= nil then state.dtBaseAlpha = a end
+            end
+        end
+        if tex.SetAlpha then pcall(tex.SetAlpha, tex, 0) end
+        if state then state.dtHidden = true end
+    else
+        if state and state.dtHidden then
+            local base = state.dtBaseAlpha
+            if tex.SetAlpha then pcall(tex.SetAlpha, tex, base or 1) end
+            state.dtHidden = nil
+            state.dtBaseAlpha = nil
+        end
+    end
+end
+
+local function ApplyDungeonTrackerTrashPercentTextStyling(dtDB)
+    if not dtDB then return end
+    local cfg = rawget(dtDB, "trashPercentText")
+    if type(cfg) ~= "table" then return end
+
+    -- Progress bars are managed by the MODULE (ScenarioObjectiveTracker), not the block.
+    -- ObjectiveTrackerModuleMixin:GetProgressBar stores them in module.usedProgressBars
+    -- keyed by line objects.
+    local scenario = _G.ScenarioObjectiveTracker
+    if not scenario then return end
+
+    local usedBars = scenario.usedProgressBars
+    if type(usedBars) == "table" then
+        for _, progressBar in pairs(usedBars) do
+            if type(progressBar) == "table" and progressBar.Bar and progressBar.Bar.Label then
+                ApplyDTTextConfig(progressBar.Bar.Label, cfg)
+            end
+        end
+    end
+end
+
+local BLIZZARD_AFFIX_BORDER_ATLAS = "ChallengeMode-AffixRing-Sm"
+
+local function ApplyDungeonTrackerAffixIconsStyling(dtDB)
+    if not dtDB then return end
+
+    local cmBlock = GetChallengeModeBlock()
+    if not cmBlock or not cmBlock.affixPool then return end
+
+    local affixScale = tonumber(rawget(dtDB, "affixIconScale"))
+    local borderStyle = rawget(dtDB, "affixBorderStyle")
+    local tintEnable = rawget(dtDB, "affixBorderTintEnable")
+    local tintColor = rawget(dtDB, "affixBorderTintColor")
+
+    -- Nothing configured → Zero-Touch
+    if not affixScale and not borderStyle and not tintEnable then return end
+
+    for affixFrame in cmBlock.affixPool:EnumerateActive() do
+        if affixFrame then
+            -- Scale
+            if affixScale and affixFrame.SetScale then
+                pcall(affixFrame.SetScale, affixFrame, affixScale)
+            end
+
+            -- Border style
+            local border = affixFrame.Border
+            if border and borderStyle then
+                if borderStyle == "none" then
+                    pcall(border.SetAlpha, border, 0)
+                elseif borderStyle == "default" then
+                    -- Restore Blizzard default: atlas + original anchoring (setAllPoints)
+                    pcall(border.SetAtlas, border, BLIZZARD_AFFIX_BORDER_ATLAS, false)
+                    pcall(border.ClearAllPoints, border)
+                    pcall(border.SetAllPoints, border, affixFrame)
+                    pcall(border.SetAlpha, border, 1)
+                else
+                    -- Custom border from IconBorders registry
+                    local styleDef = addon.IconBorders and addon.IconBorders.GetStyle and addon.IconBorders.GetStyle(borderStyle)
+                    if styleDef and styleDef.atlas then
+                        pcall(border.SetAtlas, border, styleDef.atlas, false)
+                        -- Expand border to account for atlas padding
+                        local ex = (styleDef.expandX or 0)
+                        local ey = (styleDef.expandY or 0)
+                        pcall(border.ClearAllPoints, border)
+                        pcall(border.SetPoint, border, "TOPLEFT", affixFrame, "TOPLEFT", -ex, ey)
+                        pcall(border.SetPoint, border, "BOTTOMRIGHT", affixFrame, "BOTTOMRIGHT", ex, -ey)
+                        pcall(border.SetAlpha, border, 1)
+                    end
+                end
+            end
+
+            -- Border tint (applies to any border style except "none")
+            if border and borderStyle ~= "none" then
+                if tintEnable and type(tintColor) == "table" then
+                    pcall(border.SetVertexColor, border, tintColor[1] or 1, tintColor[2] or 1, tintColor[3] or 1, tintColor[4] or 1)
+                else
+                    pcall(border.SetVertexColor, border, 1, 1, 1, 1)
+                end
+            end
+        end
+    end
+end
+
+local function ApplyDungeonTrackerTimerBarStyling(dtDB)
+    if not dtDB then return end
+
+    local cmBlock = GetChallengeModeBlock()
+    if not cmBlock then return end
+    local statusBar = cmBlock.StatusBar
+    if not statusBar then return end
+
+    -- Hide Timer Bar
+    local hideTimerBar = rawget(dtDB, "hideTimerBar")
+    if hideTimerBar ~= nil then
+        DTSetTextureHidden(statusBar, hideTimerBar)
+    end
+
+    -- Foreground texture
+    local fgTexKey = rawget(dtDB, "timerBarForegroundTexture")
+    local usingCustomFgTex = fgTexKey and fgTexKey ~= "default"
+    if usingCustomFgTex then
+        local path = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(fgTexKey)
+        if path then
+            pcall(statusBar.SetStatusBarTexture, statusBar, path)
+        end
+    end
+    -- Note: "default" leaves the Blizzard atlas (ChallengeMode-TimerFill) in place.
+
+    -- Foreground color
+    -- "default"  → with default atlas: don't touch; with custom texture: apply Blizzard green
+    -- "original" → white vertex color (texture shows its native colors)
+    -- "custom"   → user-chosen color
+    local fgColorMode = rawget(dtDB, "timerBarForegroundColorMode")
+    if fgColorMode == "custom" then
+        local c = rawget(dtDB, "timerBarForegroundColor")
+        if type(c) == "table" then
+            pcall(statusBar.SetStatusBarColor, statusBar, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        end
+    elseif fgColorMode == "original" then
+        pcall(statusBar.SetStatusBarColor, statusBar, 1, 1, 1, 1)
+    elseif usingCustomFgTex then
+        -- "default" with custom texture: tint to match stock Blizzard green
+        local bc = BLIZZARD_TIMER_BAR_COLOR
+        pcall(statusBar.SetStatusBarColor, statusBar, bc[1], bc[2], bc[3], bc[4])
+    end
+    -- else: "default" with default atlas → don't touch (atlas carries its own green)
+
+    -- No background row: the "dark area" behind the fill is just the StatusBar's unfilled region,
+    -- not a separate texture. The decorative TimerBGBack/TimerBG are handled by the Visibility tab.
+end
+
+local function ApplyDungeonTrackerVisibility(dtDB)
+    if not dtDB then return end
+
+    -- StageBlock background (NormalBG)
+    local hideStageBackground = rawget(dtDB, "hideStageBackground")
+    if hideStageBackground ~= nil then
+        local stageBlock = GetStageBlock()
+        if stageBlock and stageBlock.NormalBG then
+            DTSetTextureHidden(stageBlock.NormalBG, hideStageBackground)
+        end
+    end
+
+    -- ChallengeModeBlock backgrounds (timer frame artwork)
+    local hideTimerBackground = rawget(dtDB, "hideTimerBackground")
+    if hideTimerBackground ~= nil then
+        local cmBlock = GetChallengeModeBlock()
+        if cmBlock then
+            -- Named background textures
+            DTSetTextureHidden(cmBlock.TimerBGBack, hideTimerBackground)
+            DTSetTextureHidden(cmBlock.TimerBG, hideTimerBackground)
+
+            -- Anonymous overlay texture (atlas="challengemode-timer", setAllPoints=true).
+            -- Has no parentKey so we find it by iterating regions.
+            if not cmBlock._dtOverlayTex then
+                local regions = { cmBlock:GetRegions() }
+                for _, region in ipairs(regions) do
+                    if region.GetObjectType and region:GetObjectType() == "Texture"
+                       and region ~= cmBlock.TimerBGBack and region ~= cmBlock.TimerBG
+                       and region ~= cmBlock.Level and region ~= cmBlock.TimeLeft then
+                        -- The challengemode-timer overlay is the only remaining full-size texture
+                        local numPoints = region.GetNumPoints and region:GetNumPoints() or 0
+                        if numPoints >= 2 then
+                            cmBlock._dtOverlayTex = region
+                            break
+                        end
+                    end
+                end
+            end
+            DTSetTextureHidden(cmBlock._dtOverlayTex, hideTimerBackground)
+        end
+    end
+end
+
+local function ApplyDungeonTrackerStyling(componentSelf)
+    local dtDB = GetDungeonTrackerDB(componentSelf)
+    if not dtDB then return end
+
+    ApplyDungeonTrackerStageTextStyling(dtDB)
+    ApplyDungeonTrackerKeyLevelTextStyling(dtDB)
+    ApplyDungeonTrackerTimerTextStyling(dtDB)
+    ApplyDungeonTrackerTrashPercentTextStyling(dtDB)
+    ApplyDungeonTrackerAffixIconsStyling(dtDB)
+    ApplyDungeonTrackerTimerBarStyling(dtDB)
+    ApplyDungeonTrackerVisibility(dtDB)
+end
+
+-- Collapse all non-Scenario OT modules when an M+ key starts.
+local _collapseOtherOnKeyStart_installed = false
+local function InstallCollapseOtherOnKeyStart(componentSelf)
+    if _collapseOtherOnKeyStart_installed then return end
+    _collapseOtherOnKeyStart_installed = true
+
+    local eventFrame = CreateFrame("Frame")
+    eventFrame:RegisterEvent("CHALLENGE_MODE_START")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:SetScript("OnEvent", function(_, event, ...)
+        -- Check setting live each time (handles profile switches, toggle changes).
+        local dtDB = GetDungeonTrackerDB(componentSelf)
+        if not dtDB then return end
+        local enabled = rawget(dtDB, "collapseOtherOnKeyStart")
+        if not enabled then return end
+
+        local isActive = false
+        if event == "CHALLENGE_MODE_START" then
+            isActive = true
+        elseif event == "PLAYER_ENTERING_WORLD" then
+            -- Reconnect to an in-progress M+ run
+            isActive = C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive()
+        end
+        if not isActive then return end
+
+        local tracker = _G.ObjectiveTrackerFrame
+        if not tracker or type(tracker.modules) ~= "table" then return end
+
+        local scenarioModule = _G.ScenarioObjectiveTracker
+        for _, module in pairs(tracker.modules) do
+            if type(module) == "table" and module ~= scenarioModule then
+                if module.SetCollapsed and not module:IsCollapsed() then
+                    pcall(module.SetCollapsed, module, true)
+                end
+            end
+        end
+    end)
+end
+
+-- Install hooks on ScenarioObjectiveTracker so styling is re-applied after Blizzard rebuilds.
+local _dungeonTrackerHooksInstalled = false
+local function InstallDungeonTrackerHooks(componentSelf)
+    if _dungeonTrackerHooksInstalled then return end
+    _dungeonTrackerHooksInstalled = true
+
+    -- Re-apply on ScenarioObjectiveTracker layout changes
+    local scenario = _G.ScenarioObjectiveTracker
+    if scenario then
+        local dtApplyQueued = false
+        local function requestDTApply()
+            if dtApplyQueued then return end
+            dtApplyQueued = true
+            _G.C_Timer.After(0, function()
+                dtApplyQueued = false
+                ApplyDungeonTrackerStyling(componentSelf)
+            end)
+        end
+
+        if type(scenario.EndLayout) == "function" then
+            hooksecurefunc(scenario, "EndLayout", requestDTApply)
+        end
+        if type(scenario.LayoutContents) == "function" then
+            hooksecurefunc(scenario, "LayoutContents", requestDTApply)
+        end
+    end
+
+    -- Re-apply after StageBlock updates (when stage text / BG changes)
+    local stageBlock = GetStageBlock()
+    if stageBlock and type(stageBlock.UpdateStageBlock) == "function" then
+        hooksecurefunc(stageBlock, "UpdateStageBlock", function()
+            _G.C_Timer.After(0, function()
+                ApplyDungeonTrackerStyling(componentSelf)
+            end)
+        end)
+    end
+
+    -- ChallengeModeBlock hooks for M+ timer display
+    local cmBlock = GetChallengeModeBlock()
+    if cmBlock then
+        -- Re-apply key level text + visibility after Activate (M+ start / reconnect)
+        if type(cmBlock.Activate) == "function" then
+            hooksecurefunc(cmBlock, "Activate", function()
+                _G.C_Timer.After(0, function()
+                    ApplyDungeonTrackerStyling(componentSelf)
+                end)
+            end)
+        end
+
+        -- PERF: UpdateTime runs every frame. Only re-apply timer text color if configured.
+        -- Font face/size/style are stable and only need one application (on Activate);
+        -- color must be re-applied because Blizzard resets it (WHITE vs RED) in UpdateTime.
+        if type(cmBlock.UpdateTime) == "function" then
+            hooksecurefunc(cmBlock, "UpdateTime", function()
+                local dtDB = GetDungeonTrackerDB(componentSelf)
+                if not dtDB then return end
+                local cfg = rawget(dtDB, "timerText")
+                if type(cfg) ~= "table" then return end
+                if cfg.colorMode ~= "custom" then return end
+                local c = cfg.color
+                if type(c) ~= "table" then return end
+                -- Direct call, no C_Timer — this runs every frame
+                if cmBlock.TimeLeft then
+                    SafeSetTextColor(cmBlock.TimeLeft, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+                end
+            end)
+        end
+
+        -- Re-apply death count styling after deaths (for future expansion)
+        if type(cmBlock.UpdateDeathCount) == "function" then
+            hooksecurefunc(cmBlock, "UpdateDeathCount", function()
+                _G.C_Timer.After(0, function()
+                    ApplyDungeonTrackerStyling(componentSelf)
+                end)
+            end)
+        end
+
+        -- Re-apply affix styling after affixes are set up (for future expansion)
+        if type(cmBlock.SetUpAffixes) == "function" then
+            hooksecurefunc(cmBlock, "SetUpAffixes", function()
+                _G.C_Timer.After(0, function()
+                    ApplyDungeonTrackerStyling(componentSelf)
+                end)
+            end)
+        end
+    end
+
+    -- Install the collapse-on-key-start listener (always installed, checks setting live)
+    InstallCollapseOtherOnKeyStart(componentSelf)
+end
+
 local function ApplyObjectiveTrackerStylingAll(self)
     ApplyObjectiveTrackerHeaderBackgroundStyling(self)
     ApplyObjectiveTrackerTextStyling(self)
     ApplyObjectiveTrackerScale(self)
+    ApplyDungeonTrackerStyling(self)
 end
 
 local function InstallObjectiveTrackerHooks(self)
@@ -858,9 +1273,13 @@ addon:RegisterComponentInitializer(function(self)
                 colorMode = "default",
                 color = { 0.8, 0.8, 0.8, 1 },
             }, ui = { hidden = true }},
+
+            -- Dungeon Tracker sub-table (all nil = Zero-Touch)
+            dungeonTracker = { type = "addon", ui = { hidden = true } },
         },
         ApplyStyling = function(componentSelf)
             InstallObjectiveTrackerHooks(componentSelf)
+            InstallDungeonTrackerHooks(componentSelf)
             -- Combat-safe: RefreshOpacityState calls ApplyStyling during combat.
             -- Only enforce in-combat opacity during combat; avoid applying full styling.
             ApplyObjectiveTrackerCombatOpacity(componentSelf)
