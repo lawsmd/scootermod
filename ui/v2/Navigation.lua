@@ -82,6 +82,16 @@ Navigation.NavModel = {
         },
     },
     {
+        key = "bossWarnings",
+        label = "Boss Warnings",
+        collapsible = true,
+        children = {
+            { key = "bwWarnings", label = "Boss Warnings", module = "bossWarnings" },
+            { key = "bwTimeline", label = "Boss Timeline", module = "bossWarnings" },
+            { key = "bwBars", label = "Boss Bars", module = "bossWarnings" },
+        },
+    },
+    {
         key = "qol",
         label = "Quality of Life",
         collapsible = true,

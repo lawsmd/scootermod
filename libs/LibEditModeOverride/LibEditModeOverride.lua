@@ -111,6 +111,13 @@ local function SliderIsIndexBased(frame, setting, restrictions)
      and restrictions.minValue == 50 and restrictions.maxValue == 200 and restrictions.stepSize == 10 then
     return true
   end
+  -- Encounter Events (Boss Warnings / Timeline): all sliders use ConvertValueDefault (index-based).
+  -- Covers IconSize (50-200/10), OverallSize (50-200/10), Transparency (50-100/1),
+  -- BarWidth (50-200/1), BackgroundTransparency (0-100/1), Padding (0-20/1).
+  if frame and frame.system == Enum.EditModeSystem.EncounterEvents
+     and restrictions.type == Enum.EditModeSettingDisplayType.Slider then
+    return true
+  end
   return false
 end
 

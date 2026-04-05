@@ -213,6 +213,7 @@ function addon:GetDefaults()
             },
             moduleEnabled = {
                 actionBars = false,
+                bossWarnings = false,
                 buffsDebuffs = false,
                 classAuras = false,
                 cooldownManager = false,
@@ -227,6 +228,7 @@ function addon:GetDefaults()
                 tooltip = false,
                 unitFrames = false,
             },
+            bossWarnings = {},
             groupFrames = {
                 raid = {
                     healthBarTexture = "default",

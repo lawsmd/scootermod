@@ -150,6 +150,7 @@ core/components/damagemetersv2/styling.lua
 core/components/damagemetersv2/editmode.lua
 core/components/damagemetersv2/export.lua
 core/components/damagemetersv2/events.lua
+core/components/bosswarnings/core.lua
 core/debug/core.lua
 core/debug/editmode.lua
 core/debug/classauras.lua
@@ -222,6 +223,9 @@ ui/v2/settings/interface/NotesRenderer.lua
 ui/v2/settings/interface/DamageMeterRenderer.lua
 ui/v2/settings/interface/DamageMeterV2Renderer.lua
 ui/v2/settings/interface/ObjectiveTrackerRenderer.lua
+ui/v2/settings/bosswarnings/BossWarningsRenderer.lua
+ui/v2/settings/bosswarnings/BossTimelineRenderer.lua
+ui/v2/settings/bosswarnings/BossBarsRenderer.lua
 ui/v2/settings/qol/EditModeRenderer.lua
 ui/v2/settings/qol/LootVendorsRenderer.lua
 ui/v2/settings/qol/QuestsRenderer.lua

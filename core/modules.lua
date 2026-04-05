@@ -58,6 +58,7 @@ end
 
 addon.MODULE_CATEGORY_ORDER = {
     "actionBars",
+    "bossWarnings",
     "buffsDebuffs",
     "classAuras",
     "cooldownManager",
@@ -85,6 +86,9 @@ addon.MODULE_CATEGORIES = {
             { id = "petBar", label = "Pet Bar" },
             { id = "stanceBar", label = "Stance Bar" },
         },
+    },
+    bossWarnings = {
+        label = "Boss Warnings",
     },
     buffsDebuffs = {
         label = "Buffs/Debuffs",
