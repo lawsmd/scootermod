@@ -1,5 +1,4 @@
--- Taint Debugging Module for Scoot
--- Tracks all Edit Mode operations and captures stack traces when taint errors occur
+-- taintdebug.lua - Edit Mode taint tracking and stack trace capture
 local addonName, addon = ...
 
 addon.TaintDebug = addon.TaintDebug or {}

@@ -67,7 +67,7 @@ end
 -- - UNIT_HEAL_PREDICTION: Incoming heal updates
 -- - UNIT_HEALTH: Backup for any health changes the SetValue hook might miss
 --
--- This fixes "stuck colors" when healing to exactly 100% where no subsequent
+-- Fixes "stuck colors" when healing to exactly 100% where no subsequent
 -- SetValue call might occur.
 --------------------------------------------------------------------------------
 
@@ -133,7 +133,7 @@ end)
 -- Over Absorb Glow Visibility
 --------------------------------------------------------------------------------
 -- Hides or shows the OverAbsorbGlow texture on party frames.
--- This glow appears when absorb shields exceed the health bar width.
+-- Over-absorb glow appears when absorb shields exceed the health bar width.
 -- Frame: CompactPartyFrameMember[1-5].overAbsorbGlow (direct child of frame, not healthBar)
 --
 -- Uses alpha hiding with persistent hooks (same pattern as player frame OverAbsorbGlow).

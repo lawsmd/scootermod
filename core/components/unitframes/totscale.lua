@@ -1,17 +1,9 @@
+-- totscale.lua - Scale and position controls for ToT and Focus-Target frames
 local addonName, addon = ...
 
---[[
-    Target of Target (ToT) and Focus Target (FoT) Positioning and Scaling
-
-    These frames are NOT Edit Mode managed - Blizzard creates them as children
-    of Target/Focus frames. SetScale() and SetPoint() can safely be used outside
-    combat with proper guards.
-
-    Key considerations:
-    - TargetFrameToT: Never re-anchored during gameplay, positioning persists
-    - FocusFrameToT: Re-anchored by FocusFrameMixin:SetSmallSize() when toggling
-      Focus frame size - requires SetPoint hook to persist the custom position
-]]
+-- ToT and FoT are not Edit Mode managed -- Blizzard creates them as children
+-- of Target/Focus. SetScale/SetPoint are safe outside combat.
+-- FocusFrameToT gets re-anchored by SetSmallSize(); a SetPoint hook persists offsets.
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
 local FS = addon.FrameState

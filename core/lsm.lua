@@ -1,3 +1,4 @@
+-- lsm.lua - LibSharedMedia-3.0 registration
 local addonName, addon = ...
 
 local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)

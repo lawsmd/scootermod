@@ -1,10 +1,11 @@
+-- core.lua - Cooldown Manager: overlay styling, viewer mappings, shared utilities
 local addonName, addon = ...
 
 local Component = addon.ComponentPrototype
 local Util = addon.ComponentsUtil
 
 --------------------------------------------------------------------------------
--- Cooldown Manager (CDM) — Overlay-based icon styling for CooldownViewer frames
+-- Overlay-based icon styling for CooldownViewer frames
 --------------------------------------------------------------------------------
 
 -- CooldownViewer icon frames are semi-protected in 12.0; overlay-only styling.

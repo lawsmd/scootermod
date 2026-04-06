@@ -225,7 +225,7 @@ end
 --------------------------------------------------------------------------------
 -- Creates a compact color selector with left/right arrows, dropdown,
 -- and optional inline color swatch (shown when custom value is selected).
--- This is a miniaturized version of SelectorColorPicker.
+-- Miniaturized SelectorColorPicker variant.
 --------------------------------------------------------------------------------
 
 local function CreateColorMini(opts, parentContainer, theme, useLightDim)

@@ -1,3 +1,4 @@
+-- portraits.lua - Portrait offset, scale, zoom, mask, border, and hide controls
 local addonName, addon = ...
 local Util = addon.ComponentsUtil
 local CleanupIconBorderAttachments = Util.CleanupIconBorderAttachments
@@ -276,8 +277,8 @@ do
 
 		-- Apply current desired state immediately (and set the sticky flag).
 		-- Always enforced immediately (even during combat) because SetAlpha/SetVertexColor
-		-- are not protected functions and won't cause taint. This ensures the texture is
-		-- hidden before the frame renders.
+		-- are not protected functions and won't cause taint -- hides the texture
+		-- before the frame renders.
 		if hidden then
 			if texState then texState.petOverlayHidden = true end
 			enforceHiddenNow(texture)

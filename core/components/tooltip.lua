@@ -393,7 +393,7 @@ local function InitTooltipIDs()
     -- Main data processor hook: catches spells, items, quests, achievements, etc.
     -- Uses re-entrancy guard: each time Blizzard re-processes tooltip data (e.g.
     -- spells with cooldowns refresh continuously), the tooltip lines are rebuilt
-    -- from scratch. We wipe dedup and re-add IDs on every non-reentrant call.
+    -- from scratch. Wipe dedup and re-add IDs on every non-reentrant call.
     if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall then
         TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tooltip, data)
             if not isTooltipIDsEnabled() then return end

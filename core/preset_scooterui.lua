@@ -1,4 +1,5 @@
-﻿local addonName, addon = ...
+﻿-- preset_scooterui.lua - ScooterUI preset data
+local addonName, addon = ...
 
 local Presets = addon.Presets
 if not Presets or not Presets.Register then
@@ -22,7 +23,7 @@ Presets:Register({
 
     -- Edit Mode layout payload (raw layoutInfo table).
     -- Capture/update via: /scoot debug editmode export "ScooterUI"
-    -- NOTE: We intentionally do NOT ship the Blizzard Share string because there is no import API.
+    -- NOTE: Blizzard Share string intentionally omitted — no import API exists.
     -- EDITMODE_LAYOUT_START
     editModeLayout = {
   layoutName = "ScooterUI",

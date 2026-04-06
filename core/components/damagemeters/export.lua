@@ -47,7 +47,7 @@ local inspectQueue = {}           -- array of { guid, unit }
 local inspectBusy = false
 local inspectTicker = nil
 local inspectEventFrame = nil
-local pendingInspectEntry = nil   -- the { guid, unit } we're currently inspecting
+local pendingInspectEntry = nil   -- the { guid, unit } currently being inspected
 
 local function RebuildInspectQueue()
     wipe(inspectQueue)

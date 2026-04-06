@@ -1,6 +1,4 @@
--- framestate.lua - Centralized state tracking for Blizzard frames
--- Uses weak-keyed lookup tables to avoid writing properties directly to frames
--- (which would taint them and cause secret value errors)
+-- framestate.lua - Centralized state tracking for Blizzard frames (weak-keyed, taint-safe)
 local addonName, addon = ...
 
 addon.FrameState = addon.FrameState or {}

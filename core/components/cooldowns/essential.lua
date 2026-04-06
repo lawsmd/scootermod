@@ -1,3 +1,4 @@
+-- essential.lua - Essential Cooldowns component definition and settings
 local addonName, addon = ...
 
 local Component = addon.ComponentPrototype

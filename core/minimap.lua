@@ -1,12 +1,4 @@
---------------------------------------------------------------------------------
--- Scoot Minimap Button
---
--- Creates a minimap button using LibDataBroker and LibDBIcon.
--- Left-click opens the Scoot settings panel (same as /scoot).
--- Right-click also opens settings.
--- Drag to reposition around the minimap.
---------------------------------------------------------------------------------
-
+-- minimap.lua - Minimap button via LibDataBroker and LibDBIcon
 local addonName, addon = ...
 
 local LDB = LibStub("LibDataBroker-1.1", true)

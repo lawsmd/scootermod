@@ -126,7 +126,7 @@ local function SetupSpellbookHooks()
         UpdateButtonVisibility()
     end, "ScootSpellbookOverlay")
 
-    -- Catch the case where spellbook is already open when we register
+    -- Catch the case where spellbook is already open at registration time
     -- (e.g. Blizzard_PlayerSpells loaded and opened in the same frame)
     if not spellbookButton then
         CreateSpellbookButton()

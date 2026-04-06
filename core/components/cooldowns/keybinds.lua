@@ -1,6 +1,5 @@
+-- keybinds.lua - Keybind resolution for CDM icon overlays
 local addonName, addon = ...
-
--- Keybind resolution: maps action bar keybinds to CDM icon overlays (Essential/Utility only).
 
 addon.SpellBindings = addon.SpellBindings or {}
 local SpellBindings = addon.SpellBindings

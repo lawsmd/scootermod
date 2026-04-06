@@ -1,3 +1,4 @@
+-- damagemetersv2/layout.lua - Column width calculation, bar row layout, window sizing
 local _, addon = ...
 local DM2 = addon.DamageMetersV2
 

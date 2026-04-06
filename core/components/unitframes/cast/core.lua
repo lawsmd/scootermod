@@ -1,3 +1,9 @@
+--------------------------------------------------------------------------------
+-- cast/core.lua
+-- Cast bar subsystem initialization: shared state, event routing, and per-unit
+-- cast bar module registration.
+--------------------------------------------------------------------------------
+
 local addonName, addon = ...
 local Util = addon.ComponentsUtil
 local ClampOpacity = Util.ClampOpacity
@@ -110,7 +116,7 @@ function CB._installGradientHook(spellFS, cfgResolver, parentFrame)
 		if mode ~= "classGradient" and mode ~= "specGradient" and mode ~= "customGradient" then return end
 		if not addon.BuildColorRampString then return end
 		local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(mode, styleCfg)
-		-- Text-fill mode: apply gradient to filledText, uniform codes to frame.Text (pitfall #25)
+		-- Text-fill mode: apply gradient to filledText, uniform codes to frame.Text
 		if parentFrame and CB._getProp(parentFrame, "textFillActive") then
 			local els = CB._getProp(parentFrame, "textFillElements")
 			if els and els.filledText then
@@ -145,8 +151,7 @@ function CB._applySpellNameColor(spellFS, styleCfg, parentFrame)
 			local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode, styleCfg)
 			local rampText = addon.BuildColorRampString(cachedText, r1, g1, b1, r2, g2, b2)
 			if isTextFill then
-				-- Text-fill: gradient goes to filledText; uniform codes on frame.Text (pitfall #25)
-				local els = CB._getProp(parentFrame, "textFillElements")
+				-- Text-fill: gradient goes to filledText; uniform codes on frame.Text				local els = CB._getProp(parentFrame, "textFillElements")
 				if els and els.filledText then
 					pcall(els.filledText.SetText, els.filledText, rampText)
 				end

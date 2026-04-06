@@ -1,5 +1,4 @@
--- dialogs.lua - Base dialog module for Scoot
--- The TUI Dialog.lua wraps these methods when the v2 UI is active
+-- dialogs.lua - Base dialog module with TUI override support
 local addonName, addon = ...
 
 addon.Dialogs = {}
@@ -12,8 +11,7 @@ function addon.Dialogs:Register(name, definition)
 end
 
 function addon.Dialogs:Show(name, options)
-    -- Base implementation - will be overridden by Dialog.lua
-    -- If TUI isn't loaded yet, this provides a fallback
+    -- Fallback until Dialog.lua overrides with the TUI version
     options = options or {}
     local def = self._registry[name] or {}
 

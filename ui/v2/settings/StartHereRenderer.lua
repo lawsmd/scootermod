@@ -547,7 +547,7 @@ function StartHere.Render(panel, scrollContent)
         contentPane._headerTitle:SetText("Modules")
     end
 
-    -- Hide the default header separator — we render our own below the intro text
+    -- Hide the default header separator — a custom one renders below the intro text
     if contentPane._headerSep then
         contentPane._headerSep:Hide()
     end

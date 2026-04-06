@@ -1,3 +1,4 @@
+-- default.lua - Tracked Bars default mode: horizontal bar layout
 local addonName, addon = ...
 
 local TB = addon.TB

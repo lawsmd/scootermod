@@ -1,7 +1,4 @@
--- secretsafe.lua - Shared helpers for 12.0 "secret value" safety
--- Blizzard marks certain UI-derived values as "secret" in addon contexts,
--- causing hard errors on arithmetic, comparison, or boolean tests.
--- These helpers wrap operations in pcall to degrade gracefully.
+-- secretsafe.lua - pcall wrappers for Blizzard "secret value" safety
 local addonName, addon = ...
 
 addon.SecretSafe = addon.SecretSafe or {}

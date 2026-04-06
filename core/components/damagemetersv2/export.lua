@@ -1,3 +1,4 @@
+-- damagemetersv2/export.lua - Export pipeline: column types, data gathering, chat output
 local _, addon = ...
 local DM2 = addon.DamageMetersV2
 

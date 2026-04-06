@@ -129,7 +129,7 @@ local function scheduleComponentApply(component)
 end
 
 local function onPRDEvent(self, event, ...)
-    -- Defer all styling to next frame to ensure we're outside any execution chain
+    -- Defer all styling to next frame to ensure execution is outside any callback chain
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             for component, _ in pairs(prdRegisteredComponents) do

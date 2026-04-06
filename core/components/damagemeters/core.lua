@@ -1,3 +1,4 @@
+-- damagemeters/core.lua - V1 damage meter: session state, overlay management, Edit Mode integration
 local addonName, addon = ...
 
 -- Damage Meters Component
@@ -136,7 +137,7 @@ local cachedSessionWindowsValid = false
 -- by the ScrollBox. Use a per-window "hide then show visible" pattern.
 local windowOverlays = setmetatable({}, { __mode = "k" })
 
--- Strong set of session windows we've styled (for cleanup iteration)
+-- Strong set of session windows styled this session (for cleanup iteration)
 -- windowOverlays/windowState are weak-key tables and can't be reliably iterated.
 local knownSessionWindows = {}
 

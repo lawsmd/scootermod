@@ -368,7 +368,7 @@ end
 -- Resolve the HealthBarsContainer for Boss frames.
 -- The HealthBar StatusBar has oversized dimensions spanning both health and power bars,
 -- but the HealthBarsContainer parent has the correct bounds for just the health bar area.
--- This is because ManaBar is a SIBLING of HealthBarsContainer (not a child), so
+-- ManaBar is a SIBLING of HealthBarsContainer (not a child), so
 -- HealthBarsContainer contains ONLY the health bar region.
 function Resolvers.resolveBossHealthBarsContainer(bossFrame)
     -- Try explicit path first (most reliable)

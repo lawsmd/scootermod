@@ -417,7 +417,7 @@ end
 --------------------------------------------------------------------------------
 
 -- Apply button tint styling to a session window
--- This tints all button visuals consistently:
+-- Tint all button visuals consistently:
 -- - DamageMeterTypeDropdown.Arrow (the arrow IS the button)
 -- - SessionDropdown.Background + Arrow + SessionName (separate background + icons)
 -- - SettingsDropdown.Icon (the gear IS the button)
@@ -518,7 +518,7 @@ local function CreateButtonIconOverlay(parent, atlasName, anchorTo, size, yOffse
     overlay:SetSize(size[1], size[2])
 
     -- Set the atlas
-    overlay:SetAtlas(atlasName, false)  -- false = don't use atlas size, we set it manually
+    overlay:SetAtlas(atlasName, false)  -- false = don't use atlas size, set explicitly above
 
     getElementState(overlay).isScootOverlay = true
     overlay:Hide()  -- Start hidden

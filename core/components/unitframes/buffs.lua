@@ -1,3 +1,4 @@
+-- buffs.lua - Buff/debuff icon positioning, scaling, and border styling
 local addonName, addon = ...
 local Util = addon.ComponentsUtil
 local CleanupIconBorderAttachments = Util.CleanupIconBorderAttachments

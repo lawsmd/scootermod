@@ -1,3 +1,4 @@
+-- iconborders.lua - Icon border texture management
 local addonName, addon = ...
 
 addon.IconBorders = addon.IconBorders or {}

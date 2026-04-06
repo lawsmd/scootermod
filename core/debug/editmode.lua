@@ -1,3 +1,4 @@
+-- editmode.lua - Edit Mode frame diagnostic dump
 local addonName, addon = ...
 
 local function ResolveFrameByKey(key)

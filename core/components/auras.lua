@@ -1,3 +1,4 @@
+-- auras.lua - Buff/debuff frame styling: icon borders, overlays, font, visibility hooks
 local addonName, addon = ...
 local Util = addon.ComponentsUtil
 local CleanupIconBorderAttachments = Util.CleanupIconBorderAttachments
@@ -558,7 +559,7 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                             if auraSt and auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
                             if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
                         elseif ratio ~= 0 and not borderEnabled then
-                            -- Hide BOTH Blizzard borders — we're replacing with a properly-sized overlay
+                            -- Hide BOTH Blizzard borders — replaced by a properly-sized overlay
                             setRegionVisible(aura.DebuffBorder, false)
                             setRegionVisible(aura.TempEnchantBorder, false)
 

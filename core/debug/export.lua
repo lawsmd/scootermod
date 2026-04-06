@@ -1,3 +1,4 @@
+-- export.lua - Profile export to copyable Lua table
 local addonName, addon = ...
 
 --[[----------------------------------------------------------------------------
@@ -328,7 +329,7 @@ end
     Purpose:
       - Capture a deterministic snapshot of ConsolePort-related SavedVariables
         for ingestion into ScooterDeck preset payloads.
-      - We intentionally avoid exporting keybindings and action loadouts since
+      - Keybindings and action loadouts are intentionally excluded since
         they are often character-specific and can be disruptive when imported.
 
     Usage:

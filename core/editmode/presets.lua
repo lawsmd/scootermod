@@ -166,7 +166,7 @@ local function importConsolePortProfile(preset, profileName)
         return true
     end
 
-    -- ConsolePort is an external addon suite. If it's not loaded, we do not fail
+    -- ConsolePort is an external addon suite. If it's not loaded, the import does not fail
     -- the preset import (Scoot profile + Edit Mode layout are still valid).
     if not _G.ConsolePort and not _G.ConsolePortSettings then
         return false, "ConsolePort is not loaded. Enable ConsolePort and reload, then try importing the preset again."

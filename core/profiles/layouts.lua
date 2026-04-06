@@ -1,3 +1,4 @@
+-- layouts.lua - Edit Mode layout copy, creation, and deletion
 local _, addon = ...
 local Profiles = addon.Profiles
 local LEO = LibStub and LibStub("LibEditModeOverride-1.0")
@@ -413,7 +414,7 @@ function Profiles:PerformCopyLayout(sourceName, rawNewName)
 
 	-- prepareManager() fallback REMOVED — calling methods on EditModeManagerFrame from
 	-- addon context taints all registered system frames. The C_EditMode + preset fallbacks
-	-- above are sufficient to locate any source layout.
+	-- above are enough to locate any source layout.
 
     -- If source is a preset, check the preset manager as well
     if not sourceLayout and EditModePresetLayoutManager and EditModePresetLayoutManager.GetCopyOfPresetLayouts then
@@ -493,7 +494,7 @@ function Profiles:PerformCreateLayout(rawNewName)
 
     -- IMPORTANT: Creating a brand-new profile must be Zero‑Touch (stock Blizzard UI).
     -- Cannot reliably "undo" every frame mutation from a previous profile without
-    -- tracking Blizzard baselines, so we require a /reload and let Blizzard initialize.
+    -- tracking Blizzard baselines, so a /reload is required to let Blizzard initialize.
 
     local name = newName
 

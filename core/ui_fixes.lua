@@ -1,23 +1,13 @@
+-- ui_fixes.lua - Blizzard UI workarounds for dropdown stepper taint
 local addonName, addon = ...
-
--- Blizzard UI workarounds for dropdown stepper behavior.
--- These hooks fix issues with dropdown stepper (left/right arrow) buttons not
--- properly updating their enabled/disabled state after selections change.
 
 addon.UIFixes = addon.UIFixes or {}
 
 function addon.UIFixes.ApplyDropdownStepperFixes()
-    -- IMPORTANT: Use hooksecurefunc instead of direct method replacement to avoid taint.
-    -- Direct replacement of Blizzard mixin methods spreads taint to any code path that
-    -- calls those methods, causing "blocked from an action" errors for protected functions
-    -- like FocusUnit(), ClearFocus(), etc.
-    --
-    -- CRITICAL: All hook actions are deferred via C_Timer.After(0, ...) to break the
-    -- execution context chain. Without this deferral, taint can propagate to unrelated
-    -- Blizzard UI systems (e.g., Spell Book) causing "blocked from an action" errors
-    -- on protected functions like Frame:SetWidth().
+    -- Must use hooksecurefunc (not direct replacement) and defer all actions via
+    -- C_Timer.After(0) to break the taint propagation chain. Without both measures,
+    -- taint spreads to unrelated Blizzard UI causing "blocked from an action" errors.
 
-    -- Ensure dropdown steppers (left/right arrows) refresh enable/disable state after selection changes
     do
         local mixin = _G.SettingsDropdownControlMixin
         if mixin and type(mixin.OnSettingValueChanged) == "function" and not addon._dropdownReinitPatched then

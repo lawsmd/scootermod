@@ -1,3 +1,9 @@
+--------------------------------------------------------------------------------
+-- cast/styling.lua
+-- Cast bar visual styling for Player, Target, and Focus frames: textures,
+-- borders, spark customization, icon management, and anchor/position overrides.
+--------------------------------------------------------------------------------
+
 local addonName, addon = ...
 local CB = addon.CastBars
 local getProp = CB._getProp
@@ -436,7 +442,7 @@ do
 
 							if anchorBar then
 								-- Use direct relative anchoring to the Health/Power bar
-								-- This automatically handles scale and position changes
+								-- Automatically handles scale and position changes
 								-- - For "top" edges: cast bar sits ABOVE the anchor bar (cast bar's BOTTOM to bar's TOP)
 								-- - For "bottom" edges: cast bar sits BELOW the anchor bar (cast bar's TOP to bar's BOTTOM)
 								local castBarPoint = (anchorEdge == "top") and "BOTTOM" or "TOP"
@@ -1365,8 +1371,8 @@ do
 
 		-- Replace stage tier atlas textures with Scoot-owned overlay textures + vertex colors
 		-- that preserve the stage color progression (green→yellow→orange→red).
-		-- SetTexture cannot visually override SetAtlas on Blizzard-owned textures, so we create
-		-- our own textures at a higher sublevel and hide the originals behind them.
+		-- SetTexture cannot visually override SetAtlas on Blizzard-owned textures, so Scoot creates
+		-- its own textures at a higher sublevel and hides the originals behind them.
 		local function applyScootTextureToTiers(unitToken)
 			local titleUnit = tokenToUnit[unitToken]
 			if not titleUnit then return end
@@ -1418,7 +1424,7 @@ do
 						overlay._dColor = dColor
 						overlay._tierIndex = i
 
-						-- Hide original Blizzard atlas textures behind our overlay
+						-- Hide original Blizzard atlas textures behind the Scoot overlay
 						pcall(tier.Normal.SetAlpha, tier.Normal, 0)
 						pcall(tier.Disabled.SetAlpha, tier.Disabled, 0)
 					end

@@ -1,3 +1,9 @@
+--------------------------------------------------------------------------------
+-- cast/boss.lua
+-- Boss cast bar styling: texture overrides, icon border management, text-fill
+-- gradient application, and combat-safe hooks.
+--------------------------------------------------------------------------------
+
 local addonName, addon = ...
 local CB = addon.CastBars
 local getProp = CB._getProp
@@ -347,14 +353,6 @@ do
 				if icon then
 					if iconDisabled then
 						if icon.SetAlpha then pcall(icon.SetAlpha, icon, 0) end
-						local container = getIconBorderContainer(icon)
-						if container and addon.Borders and addon.Borders.HideAll then
-							addon.Borders.HideAll(container)
-						end
-						local container = getIconBorderContainer(icon)
-						if container and addon.Borders and addon.Borders.HideAll then
-							addon.Borders.HideAll(container)
-						end
 						local container = getIconBorderContainer(icon)
 						if container and addon.Borders and addon.Borders.HideAll then
 							addon.Borders.HideAll(container)

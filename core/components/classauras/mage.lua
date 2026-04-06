@@ -138,7 +138,7 @@ local function AlterTimeOnAuraFound(auraId, state)
     end
 
     -- Snapshot health % when aura instance changes (new cast).
-    -- Health values are secret in 12.0. Arithmetic on secrets errors, so we copy
+    -- Health values are secret in 12.0. Arithmetic on secrets errors, so the value is copied from
     -- the already-rendered health text from Blizzard's PlayerFrame (SetText accepts secrets).
     local tracked = CA._auraTracking[auraId]
     if tracked then

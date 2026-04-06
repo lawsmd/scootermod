@@ -444,7 +444,7 @@ local function ApplyNotesStyling(self)
         end
     end
 
-    -- Initialize edit mode once we have frames
+    -- Initialize edit mode once frames exist
     if anyEnabled and not editModeInitialized then
         C_Timer.After(0, InitializeEditMode)
     end

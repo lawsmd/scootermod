@@ -1,3 +1,4 @@
+-- fonts.lua - Font definitions, registration, and font picker UI
 local addonName, addon = ...
 
 addon.Fonts = addon.Fonts or {}
@@ -63,8 +64,7 @@ end
 AppendWorldTextFontLog("fonts.lua:load", { init = true })
 
 -- Build a container compatible with Settings dropdown options for font faces.
--- This mirrors RIP's behavior but keeps Scoot self-contained. We rely on
--- stock fonts available in all clients and allow future extension via media.
+-- Uses stock fonts available in all clients; extensible via media.
 function addon.BuildFontOptionsContainer()
     local create = _G.Settings and _G.Settings.CreateControlTextContainer
     local displayNames = addon.FontDisplayNames or {}
@@ -852,7 +852,7 @@ function addon.InitFontDropdown(dropdown, setting, optionsProvider)
     -- Make overlay transparent but clickable
     overlay:EnableMouse(true)
 
-    -- Store reference so we can access it later if needed
+    -- Keep a reference for later access
     dropdown._ScootFontPickerOverlay = overlay
 
     -- Initial text update

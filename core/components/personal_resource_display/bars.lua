@@ -758,7 +758,7 @@ end
 --------------------------------------------------------------------------------
 
 -- Hook to keep HealthBarsContainer hidden when hideBar is enabled.
--- This intercepts Blizzard's Show() calls (e.g., after closing Trading Post UI)
+-- Intercepts Blizzard's Show() calls (e.g., after closing Trading Post UI)
 -- and re-hides the container if the user has "Hide Health Bar" enabled.
 local healthContainerShowHookInstalled = false
 

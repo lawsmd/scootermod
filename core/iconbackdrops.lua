@@ -1,9 +1,10 @@
+-- iconbackdrops.lua - Icon backdrop atlas definitions
 local addonName, addon = ...
 
 addon.IconBackdrops = addon.IconBackdrops or {}
 local IconBackdrops = addon.IconBackdrops
 
--- Definitions intentionally exclude any ABE-branded assets. We only reference Blizzard atlases.
+-- Definitions intentionally exclude any ABE-branded assets. Only Blizzard atlases are referenced.
 local ICON_BACKDROP_DEFINITIONS = {
     { key = "blizzardBg",        label = "Default Blizzard Backdrop",    type = "atlas", atlas = "UI-HUD-ActionBar-IconFrame-Background", order = 10 },
     { key = "blizzardSlot",      label = "Default Blizzard Slot Art",    type = "atlas", atlas = "UI-HUD-ActionBar-IconFrame-Slot",       order = 20 },

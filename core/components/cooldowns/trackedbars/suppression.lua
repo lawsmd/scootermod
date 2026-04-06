@@ -1,3 +1,4 @@
+-- suppression.lua - Aura removal suppression state machine for tracked bars
 local addonName, addon = ...
 
 local TB = addon.TB

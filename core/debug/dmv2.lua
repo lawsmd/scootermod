@@ -104,7 +104,7 @@ local function TestSecret(value)
         if ok then return result end
     end
     -- Fallback: try tostring — secrets error on tostring in some contexts
-    -- but type() always works. If issecretvalue isn't available, we can't be sure.
+    -- but type() always works. If issecretvalue isn't available, the result is uncertain.
     return nil -- unknown
 end
 
@@ -579,7 +579,7 @@ local function RunFieldsDump()
         elseif uniqueClass == totalSources then
             table.insert(lines, "  RESULT: classFilename alone IS unique — viable for this group (but fragile in raids)")
         else
-            table.insert(lines, "  RESULT: NOT unique — composite key insufficient for this group")
+            table.insert(lines, "  RESULT: NOT unique — composite key not enough for this group")
         end
 
         -- classification values

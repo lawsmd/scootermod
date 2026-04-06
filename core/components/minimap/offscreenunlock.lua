@@ -1,3 +1,4 @@
+-- offscreenunlock.lua - Off-screen drag unlock for the Minimap frame
 local addonName, addon = ...
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
@@ -19,27 +20,11 @@ local function setProp(frame, key, value)
     end
 end
 
---[[----------------------------------------------------------------------------
-    Minimap Off-Screen Drag Unlock
-
-    Purpose:
-      Allow users (notably Steam Deck / handheld setups) to drag the minimap
-      partially off-screen in Edit Mode by disabling Blizzard's screen clamping.
-
-    Key design constraints:
-      - Do NOT move the frame ourselves (no drift). Edit Mode remains the source of
-        truth for the frame's position.
-      - Be combat-safe: avoid mutating protected frames during combat.
-        If called during combat, defer to PLAYER_REGEN_ENABLED.
-      - Keep it lightweight: no hooks or per-frame updates; only run on explicit
-        triggers (settings change, ApplyStyles, Edit Mode layout updates).
-
-    Implementation strategy:
-      Reuses the same technique from Unit Frame off-screen unlock:
-      SetClampedToScreen(false), SetClampRectInsets(0,0,0,0),
-      SetIgnoreFramePositionManager(true), and a 0.1px nudge via SetPoint
-      when in Edit Mode to trigger internal unlock.
-----------------------------------------------------------------------------]]--
+-- Disables Blizzard's screen clamping so Edit Mode can drag the minimap off-edge
+-- (primarily for Steam Deck / handheld setups).
+-- Reuses the same technique as unitframes offscreenunlock:
+-- SetClampedToScreen(false), SetClampRectInsets(0,0,0,0),
+-- SetIgnoreFramePositionManager(true), and a 0.1px SetPoint nudge in Edit Mode.
 
 local function _DbgEnabled()
     return addon and addon._dbgMinimapOffscreenUnlock == true

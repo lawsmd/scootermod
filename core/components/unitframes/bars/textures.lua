@@ -219,7 +219,7 @@ function Textures.applyValueBasedColor(bar, unit, overlay, useDark)
     end
 
     -- Fast path: when the overlay system is active and an overlay is provided,
-    -- we only need to color our addon-owned overlay texture. Skip the recursion guard,
+    -- only the addon-owned overlay texture needs coloring. Skip the recursion guard,
     -- Blizzard texture pcalls, and FrameState overhead entirely.
     local barState = FS.Get(bar)
     local overlaySystemActive = barState and barState.rectActive
@@ -311,9 +311,8 @@ end
 -- making color comparison impossible. Unconditional reapply avoids reading colors.
 --
 -- Single safety check at 200ms for non-overlay unit frames where Blizzard's
--- native coloring may fight our color. Overlay-active bars (party/raid) skip
+-- native coloring may fight the custom color. Overlay-active bars (party/raid) skip
 -- this entirely since usePredicted=true eliminates the timing lag.
--- (Reduced from 2 steps; see OPT-16.)
 --------------------------------------------------------------------------------
 
 local pendingValidations = setmetatable({}, { __mode = "k" }) -- Weak keys for GC
@@ -332,22 +331,12 @@ function Textures.scheduleColorValidation(bar, unit, overlay, useDark)
         return
     end
 
-    -- NOTE: The time-based cooldown was removed because it caused stuck colors.
-    -- When health changed rapidly (e.g., damaged to 20% then healed to 100% within
-    -- 600ms), the cooldown blocked the second event from getting its own validation
-    -- loop, leaving colors stuck until the next health change.
-    --
-    -- The cooldown was originally added (pre-anchor-fix) to prevent blinking when
-    -- ApplyStyles() was called repeatedly. The anchor-based fix now handles that
-    -- case, so the cooldown is no longer needed.
-    --
-    -- The pendingValidations check below still prevents truly duplicate validations
-    -- for the same bar when the SAME event causes multiple calls.
-
+    -- pendingValidations prevents duplicate validations for the same bar
+    -- when the same event causes multiple calls.
     pendingValidations[bar] = true
 
     -- Unconditionally reapply color after a short delay to catch timing edge cases
-    -- where Blizzard's native coloring overwrites ours on non-overlay bars.
+    -- where Blizzard's native coloring overwrites custom colors on non-overlay bars.
     -- Single 200ms check (COLOR_VALIDATION_DELAYS).
     -- The early-exit comparison in applyValueBasedColor makes redundant calls near-free.
     local step = 0
@@ -601,21 +590,10 @@ function Textures.applyBackgroundToBar(bar, backgroundTextureKey, backgroundColo
         return
     end
     
-    -- Ensure a background texture frame exists at an appropriate sublevel so it appears
-    -- behind the status bar fill but remains visible for cast bars.
-    --
-    -- For generic unit frame bars (health/power), the background is kept very low in the
-    -- BACKGROUND stack (-8) so any stock art sits above it if present.
-    --
-    -- For CastingBarFrame-based bars (Player/Target/Focus cast bars), Blizzard defines a
-    -- `Background` texture at BACKGROUND subLevel=2 (see CastingBarFrameBaseTemplate in
-    -- Blizzard source). An earlier implementation created ScootBG at subLevel=-8,
-    -- which meant the stock Background completely covered the overlay and made Scoot
-    -- backgrounds effectively invisible even though the region existed in the frame hierarchy.
-    --
-    -- To keep behaviour consistent with other bars while making cast bar backgrounds
-    -- visible, ScootBG is rendered above the stock Background (subLevel=3) but still
-    -- on the BACKGROUND layer so the status bar fill and FX remain on top.
+    -- Ensure a background texture exists at an appropriate sublevel.
+    -- Health/power bars: BACKGROUND subLevel=-8 (below any stock art).
+    -- Cast bars: BACKGROUND subLevel=3 (above Blizzard's Background at subLevel=2,
+    -- but below the status bar fill and FX).
     local scootBG = getProp(bar, "ScootBG")
     if not scootBG then
         local layer = "BACKGROUND"

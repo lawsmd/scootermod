@@ -1,9 +1,5 @@
+-- specabbreviations.lua - Spec name to abbreviation mapping
 local _, addon = ...
-
--- Static spec name → abbreviation lookup (max 5 characters each).
--- Keyed by the full English spec name returned by GetSpecializationInfoForClassID()
--- or GetSpecializationNameForSpecID(). Shared specs (Holy, Frost, Protection,
--- Restoration) use one abbreviation — the class color disambiguates.
 
 addon.SPEC_ABBREVIATIONS = {
     -- Death Knight

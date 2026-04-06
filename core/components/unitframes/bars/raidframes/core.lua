@@ -155,7 +155,7 @@ local function updateHealthOverlay(bar)
 
     -- Anchor overlay to match the fill texture exactly.
     -- Don't check fill dimensions - if fill has zero width (0% health), the overlay
-    -- will correctly have zero width too. This avoids reading GetWidth() which can
+    -- will correctly have zero width too. Avoids reading GetWidth() which can
     -- return secret values.
     overlay:ClearAllPoints()
     overlay:SetAllPoints(fill)
@@ -332,9 +332,9 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
     if state and not state.healthOverlay then
         -- Parent the overlay to the healthBar StatusBar (a useParentLevel="true" child).
         -- Places the overlay in the same rendering pass as DispelOverlay.
-        -- Within that pass, draw layers compare normally: our BORDER sublevel 7
+        -- Within that pass, draw layers compare normally: BORDER sublevel 7
         -- renders before DispelOverlay's ARTWORK sublevel -5/-6, so the dispel
-        -- gradient/highlight renders on top of our overlay.
+        -- gradient/highlight renders on top of the Scoot overlay.
         -- roleIcon, readyCheckIcon, selectionHighlight live on the parent
         -- CompactUnitFrame and render in a later pass (parent after children),
         -- so they remain visible above the overlay.
@@ -775,7 +775,7 @@ local function applyHealthBarBorder(bar, cfg)
     end
 end
 
--- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+-- Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
 local isEditModeActiveForBorders = addon.EditMode.IsEditModeActiveOrOpening
 
 -- Apply health bar borders to all raid frames
@@ -969,7 +969,7 @@ end
 -- Hook Installation
 --------------------------------------------------------------------------------
 
--- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC).
+-- Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC).
 -- Skip all CompactUnitFrame hooks when Edit Mode is active to avoid taint.
 local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 

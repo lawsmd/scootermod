@@ -983,7 +983,7 @@ local function ApplyDungeonTrackerVisibility(dtDB)
             DTSetTextureHidden(cmBlock.TimerBG, hideTimerBackground)
 
             -- Anonymous overlay texture (atlas="challengemode-timer", setAllPoints=true).
-            -- Has no parentKey so we find it by iterating regions.
+            -- Has no parentKey, found by iterating regions.
             if not cmBlock._dtOverlayTex then
                 local regions = { cmBlock:GetRegions() }
                 for _, region in ipairs(regions) do

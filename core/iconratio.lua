@@ -1,6 +1,5 @@
+-- iconratio.lua - Icon dimension calculations
 local addonName, addon = ...
-
--- Icon Ratio Utility: centralized ratio-based icon dimension calculations.
 -- tallWideRatio slider: -67 (3x wide) to 0 (square) to +67 (3x tall).
 
 addon.IconRatio = addon.IconRatio or {}

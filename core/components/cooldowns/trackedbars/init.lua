@@ -1,3 +1,4 @@
+-- init.lua - Tracked Bars shared state and component registration
 local addonName, addon = ...
 
 local Component = addon.ComponentPrototype

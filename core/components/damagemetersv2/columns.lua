@@ -1,3 +1,4 @@
+-- damagemetersv2/columns.lua - Column format definitions and meter type mappings
 local _, addon = ...
 local DM2 = addon.DamageMetersV2
 

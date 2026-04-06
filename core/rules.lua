@@ -1,3 +1,4 @@
+-- rules.lua - Conditional rules engine for automatic setting overrides
 local addonName, addon = ...
 
 addon.Rules = addon.Rules or {}
@@ -1018,9 +1019,7 @@ function Rules:ApplyAll(reason)
         end
     end
 
-    -- Step 1: Capture baselines for actions that are newly overridden.
-    -- Only capture if we don't already have a baseline (first override wins).
-    -- Baselines persist across sessions in profile.ruleBaselines.
+    -- Capture baselines for newly overridden actions (first override wins, persisted in profile)
     for actionId, _ in pairs(newOverrides) do
         if getBaseline(actionId) == nil then
             local handler = ACTIONS[actionId]
@@ -1043,10 +1042,8 @@ function Rules:ApplyAll(reason)
         end
     end
 
-    -- Step 2: Restore baselines for actions that were previously overridden but are not anymore.
-    -- IMPORTANT: ACTIVE_OVERRIDES is in-memory only and resets on reload/character switch.
-    -- Baselines are persisted in profile.ruleBaselines, so restoration must iterate baselines
-    -- to correctly revert settings when no rules match (including across characters).
+    -- Restore baselines for actions no longer overridden (iterates persisted baselines,
+    -- not in-memory ACTIVE_OVERRIDES, so restoration works correctly across reload/character switch)
     local baselines = getBaselinesTable()
     for actionId, baselineValue in pairs(baselines) do
         if not newOverrides[actionId] then
@@ -1056,12 +1053,12 @@ function Rules:ApplyAll(reason)
         end
     end
 
-    -- Step 3: Apply the new override values.
+    -- Apply new override values
     for actionId, value in pairs(newOverrides) do
         applyActionValue(actionId, value, reason)
     end
 
-    -- Step 4: Update the active overrides tracking table for the next cycle.
+    -- Update tracking table for next cycle
     ACTIVE_OVERRIDES = newOverrides
 end
 

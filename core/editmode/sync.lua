@@ -1,3 +1,4 @@
+-- sync.lua - Bidirectional sync between addon DB and Edit Mode settings
 local _, addon = ...
 local LEO = LibStub("LibEditModeOverride-1.0")
 
@@ -199,7 +200,7 @@ function addon.EditMode.SyncComponentSettingToEditMode(component, settingId, opt
         editModeValue = (v == "combat") and 1 or (v == "never" and 2 or 0)
         setting.settingId = setting.settingId or ResolveSettingId(frame, "visibility") or setting.settingId
     elseif settingId == "showTimer" then
-        -- Checkbox mapping for Edit Mode: true/false -> 1/0. We resolve the dynamic setting id so we don't rely on stale enums.
+        -- Checkbox mapping for Edit Mode: true/false -> 1/0. Resolves the dynamic setting id to avoid relying on stale enums.
         setting.settingId = setting.settingId or ResolveSettingId(frame, "show_timer") or setting.settingId
         local v = not not dbValue
         editModeValue = v and 1 or 0
@@ -792,9 +793,9 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         -- Decode Icon Wrap 0/1 index back into semantic value based on orientation:
         --  Horizontal: 0=Down, 1=Up
         --  Vertical:   0=Left, 1=Right
-        -- NOTE: For Aura Frame we may have just performed a Scoot-initiated
+        -- NOTE: For Aura Frame, Scoot may have just performed a
         -- orientation remap in AceDB. In that narrow case, the settings panel
-        -- marks component._skipNextAuraBackSync and we skip this readback once
+        -- marks component._skipNextAuraBackSync so this readback is skipped once
         -- to avoid clobbering the freshly remapped DB state with a stale EM snapshot.
         local sysEnum = _G.Enum and _G.Enum.EditModeSystem
         if sysEnum and frame.system == sysEnum.AuraFrame and component._skipNextAuraBackSync then
@@ -880,7 +881,7 @@ function addon.EditMode.SyncEditModeSettingToComponent(component, settingId)
         -- Resolve id for non-CDM systems and adapt index-vs-raw semantics.
         -- LibEditModeOverride converts index-based sliders back to raw for callers when
         -- SliderIsIndexBased returns true, so most systems will simply return 50–200 here.
-        -- For Aura Frame we additionally sample the live iconScale, which is authoritative.
+        -- For Aura Frame, the live iconScale is additionally sampled as the authoritative value.
         local sysEnum = _G.Enum and _G.Enum.EditModeSystem
         if sysEnum and frame and frame.system == sysEnum.AuraFrame and frame.AuraContainer and frame.AuraContainer.iconScale then
             -- Aura Frame: derive percent directly from the live iconScale on the AuraContainer.

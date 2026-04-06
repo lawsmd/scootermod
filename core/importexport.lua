@@ -1,5 +1,4 @@
 -- importexport.lua - Profile Import/Export serialization pipeline
--- AceSerializer → LibDeflate compress → EncodeForPrint → "!SM1!" prefix
 local addonName, addon = ...
 
 addon.ImportExport = {}

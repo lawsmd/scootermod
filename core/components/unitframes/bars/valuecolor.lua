@@ -145,7 +145,7 @@ do
                 addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
 
                 -- Schedule safety reapply only for non-overlay bars (Player, Target, Focus, Boss)
-                -- where Blizzard's native coloring may fight ours. Overlay-active bars (party/raid)
+                -- where Blizzard's native coloring may fight the custom color. Overlay-active bars (party/raid)
                 -- don't need this — usePredicted=true eliminates the timing lag.
                 if not overlay and addon.BarsTextures.scheduleColorValidation then
                     addon.BarsTextures.scheduleColorValidation(bar, unit, nil, useDark)

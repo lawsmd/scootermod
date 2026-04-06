@@ -1,15 +1,10 @@
+-- scalemult.lua - Addon-only scale multiplier layered on top of Edit Mode scale
 local addonName, addon = ...
 
---[[
-    Unit Frame Scale Multiplier
-    
-    Layers an addon-only scale multiplier on top of Edit Mode's existing scale.
-    This allows users to scale unit frames beyond the 200% Edit Mode limit.
-    
-    Key insight: The baseline must NOT be read from frame:GetScale() because the frame
-    may retain a previously-applied multiplied scale across reloads. Instead, the
-    Edit Mode scale value is read directly and the result computed: emScale * multiplier.
-]]
+-- Layers an addon-only scale multiplier on top of Edit Mode's existing scale,
+-- letting users exceed the 200% Edit Mode cap.
+-- KEY: Do not read frame:GetScale() for baseline -- it may carry a stale multiplied
+-- value across reloads. Read the Edit Mode scale directly instead.
 
 -- Debug helper (disabled by default)
 local DEBUG_SCALE_MULT = false

@@ -1,3 +1,4 @@
+-- visibility.lua - Per-unit opacity for combat, target, and out-of-combat states
 local addonName, addon = ...
 local Util = addon.ComponentsUtil
 local ClampOpacity = Util.ClampOpacity

@@ -1,3 +1,4 @@
+-- copy.lua - Copy unit frame settings between unit types
 local addonName, addon = ...
 
 local function deepCopy(value)

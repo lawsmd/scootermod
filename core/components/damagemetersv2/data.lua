@@ -1,3 +1,4 @@
+-- damagemetersv2/data.lua - Number formatting, death aggregation, merged data pipeline
 local _, addon = ...
 local DM2 = addon.DamageMetersV2
 
@@ -26,7 +27,7 @@ end
 -- Deaths Aggregation
 --
 -- Deaths metric returns one entry per death event, not per player.
--- We count occurrences per GUID.
+-- Count occurrences per GUID.
 --------------------------------------------------------------------------------
 
 local function CountDeathsPerGUID(deathSession)
@@ -60,7 +61,7 @@ function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
 
     local FORMATS = DM2.COLUMN_FORMATS
 
-    -- Determine which meter types we need
+    -- Determine which meter types are needed
     local neededTypes
     if inCombat then
         -- Combat: only primary column (all APIs return secret values during combat)

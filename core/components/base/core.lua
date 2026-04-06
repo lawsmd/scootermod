@@ -1,3 +1,4 @@
+-- base/core.lua - Component system: registration, state management, apply-styling orchestration
 local addonName, addon = ...
 
 addon.Components = addon.Components or {}

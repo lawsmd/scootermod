@@ -1,3 +1,4 @@
+-- damagemetersv2/combat.lua - Combat mode transitions, segment snapshots, post-combat refresh
 local _, addon = ...
 local DM2 = addon.DamageMetersV2
 
@@ -84,7 +85,7 @@ function DM2._UpdateWindowOOC(windowIndex)
     end
 
     win.mergedData = merged
-    win.cachedSecondary = nil -- no need for stale cache when we have fresh data
+    win.cachedSecondary = nil -- stale cache cleared on fresh data
 
     -- Refresh display
     DM2._RefreshBarRows(windowIndex, comp)

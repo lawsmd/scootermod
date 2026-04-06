@@ -65,7 +65,7 @@ local function RenderClassAuras(panel, scrollContent, classToken)
 
     -- Explainer note
     builder:AddDescription("PLEASE NOTE:", { color = {1, 0.82, 0}, fontSize = 14, topPadding = 4 })
-    builder:AddDescription("Class Auras require the Buff/Debuff they track to be added to your Cooldown Manager > Tracked Buffs. Scoot will HIDE the icon from that group and use its info to power our Class Aura. This means it will still hold an empty spot in your Tracked Buffs list, so put it either in the first or last slot(s).", { color = {1, 0.82, 0}, topPadding = -8, bottomPadding = -4 })
+    builder:AddDescription("Class Auras require the Buff/Debuff they track to be added to your Cooldown Manager > Tracked Buffs. Scoot will HIDE the icon from that group and use its info to power the Class Aura. This means it will still hold an empty spot in your Tracked Buffs list, so put it either in the first or last slot(s).", { color = {1, 0.82, 0}, topPadding = -8, bottomPadding = -4 })
 
     for _, aura in ipairs(auras) do
         if not aura.hideFromSettings then

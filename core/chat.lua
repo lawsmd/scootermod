@@ -1,6 +1,5 @@
+-- chat.lua - Chat frame visibility controller
 local addonName, addon = ...
-
--- Chat visibility controller
 -- Goal: allow ScooterDeck users to fully hide the stock in-game chat UI.
 -- Constraints:
 --  - Lightweight (no OnUpdate polling)
@@ -81,8 +80,8 @@ end
 local function RestoreBaseline(self, name, frame)
     local baseline = self._baselines and self._baselines[name] or nil
     if not baseline then
-        -- Zero-touch: if we never hid this frame (no baseline captured),
-        -- do not touch it. Importantly, never force-show chat frames.
+        -- Zero-touch: if this frame was never hidden (no baseline captured),
+        -- skip it. Never force-show chat frames.
         return
     end
 
@@ -131,8 +130,7 @@ end
 function Chat:ApplyFromProfile(reason)
     local shouldHide = getProfileSetting()
 
-    -- Zero-touch: when chat hiding is disabled and we have nothing to restore
-    -- (i.e., we never hid anything this session), do nothing.
+    -- Zero-touch: when chat hiding is disabled and nothing was hidden this session, skip.
     if not shouldHide then
         if not (self._baselines and next(self._baselines)) then
             return

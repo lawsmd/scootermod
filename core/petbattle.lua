@@ -1,9 +1,4 @@
----------------------------------------------------------------------------------
--- Pet Battle Frame Hiding
--- Hides addon-owned frames during pet battles (Blizzard's FrameLock system
--- only handles named Blizzard frames, not addon-created UIParent children).
----------------------------------------------------------------------------------
-
+-- petbattle.lua - Hide addon frames during pet battles
 local addonName, addon = ...
 
 local isInPetBattle = false

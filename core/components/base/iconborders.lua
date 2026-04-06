@@ -1,3 +1,4 @@
+-- base/iconborders.lua - Icon border overlay creation, sizing, cleanup
 local addonName, addon = ...
 
 local getState = addon.ComponentsUtil._getState

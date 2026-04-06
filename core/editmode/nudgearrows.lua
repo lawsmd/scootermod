@@ -224,7 +224,7 @@ end
 --------------------------------------------------------------------------------
 
 local function onClearSelectedSystem()
-    -- Only hide if we're tracking a native frame (custom frame deselection handled separately)
+    -- Only hide when tracking a native frame (custom frame deselection handled separately)
     if currentIsNative then
         hideOverlay()
     end

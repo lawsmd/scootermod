@@ -12,7 +12,7 @@ local playerClassToken = CA._playerClassToken
 --------------------------------------------------------------------------------
 -- CDM Borrow: Hide CDM icons via SetAlpha(0)
 --------------------------------------------------------------------------------
--- When Class Auras takes over display, we hide the corresponding CDM icon
+-- When Class Auras takes over display, the corresponding CDM icon is hidden
 -- to avoid duplicates. Duration comes from DurationObject, stacks from direct scan or GetAuraApplicationDisplayCount.
 
 -- CDM Borrow subsystem: hides CDM icons via SetAlphaFromBoolean when Class Auras
@@ -22,7 +22,7 @@ local cdmBorrow = {
 }
 -- Track which CDM item frames already have Show/SetShown hooks installed
 local hookedItemFrames = setmetatable({}, { __mode = "k" })
--- Track CDM item frames we've hidden via SetAlphaFromBoolean -- itemFrame -> auraId
+-- Track CDM item frames hidden via SetAlphaFromBoolean -- itemFrame -> auraId
 local hiddenItemFrames = setmetatable({}, { __mode = "k" })
 
 -- Module-level function for pcall: checks if child's linked spells contain spellId

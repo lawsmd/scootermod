@@ -160,9 +160,8 @@ function addon.ApplyRaidFrameTextStyle()
         return
     end
 
-    -- Deprecated: Raid Player Name styling is now driven by overlay FontStrings
-    -- (see ApplyRaidFrameNameOverlays). Moving Blizzard's `frame.name` must be avoided
-    -- because the overlay clipping container copies its anchor geometry to preserve
+    -- Name styling delegates to overlay FontStrings. Moving Blizzard's `frame.name`
+    -- is avoided because the overlay clipping container copies its anchor geometry to preserve
     -- truncation. Touching `frame.name` here reintroduces leaking/incorrect clipping.
     if addon.ApplyRaidFrameNameOverlays then
         addon.ApplyRaidFrameNameOverlays()
@@ -174,8 +173,7 @@ local function installRaidFrameTextHooks()
     if addon._RaidFrameTextHooksInstalled then return end
     addon._RaidFrameTextHooksInstalled = true
 
-    -- Deprecated: name styling hooks must not touch Blizzard's `frame.name`.
-    -- Overlay system installs its own hooks (installRaidNameOverlayHooks()).
+    -- Name hooks are installed by the overlay system (installRaidNameOverlayHooks).
 end
 
 --------------------------------------------------------------------------------
@@ -749,7 +747,7 @@ end
 -- Creates addon-owned FontString overlays on raid frames that visually replace
 -- Blizzard's statusText. These overlays persist during combat because only
 -- addon-owned FontStrings are manipulated. Blizzard can reset its own
--- statusText all it wants -- our overlay stays styled.
+-- statusText all it wants -- the Scoot overlay stays styled.
 --
 -- Pattern: Mirror text via SetText/SetFormattedText hooks, style on setup,
 -- hide Blizzard's element via SetAlpha(0).
@@ -922,7 +920,7 @@ local function ensureRaidStatusTextOverlay(frame, cfg)
                 else
                     pcall(ownerState.statusTextOverlay.SetText, ownerState.statusTextOverlay, text)
                 end
-                -- Mirror visibility: if Blizzard is showing status text, show our overlay
+                -- Mirror visibility: if Blizzard is showing status text, show the Scoot overlay
                 if ownerState.statusTextOverlay.Show then
                     ownerState.statusTextOverlay:Show()
                 end

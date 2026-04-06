@@ -237,7 +237,7 @@ local function CreateItemFrame(parent, groupIndex)
                     end)
                 end)
             else
-                -- Fallback: just remove directly
+                -- Fallback: remove directly
                 CG.RemoveEntry(self._groupIndex, self._entryIndex)
                 RefreshAllCategories()
             end
@@ -676,7 +676,7 @@ local function LayoutGrid(groupIndex)
         end
     end
 
-    -- Ensure we have enough item frames
+    -- Ensure enough item frames exist
     while #pool < #visibleEntries do
         local item = CreateItemFrame(container, groupIndex)
         table.insert(pool, item)
@@ -922,7 +922,7 @@ local function CreateTabButton(cdmFrame)
     tab.displayMode = DISPLAY_MODE
     tab.tooltipText = "Scoot"
 
-    -- Override SetChecked: the mixin calls SetAtlas on Icon, but we use a .tga file.
+    -- Override SetChecked: the mixin calls SetAtlas on Icon, but this tab uses a .tga file.
     function tab:SetChecked(checked)
         if self.SelectedTexture then
             self.SelectedTexture:SetShown(checked)
@@ -966,7 +966,7 @@ local function ActivateScootTab(cdmFrame, contentFrameRef, blizzElements, tab)
         if el then el:Hide() end
     end
 
-    -- Show our content
+    -- Show the Scoot content
     contentFrameRef:Show()
 
     -- Set portrait (C-side texture op — safe, avoids calling frame method)
@@ -983,7 +983,7 @@ local function InjectScootTab()
 
     injected = true
 
-    -- Elements to hide/show when toggling our tab
+    -- Elements to hide/show when toggling the Scoot tab
     local blizzElements = {
         cdmFrame.CooldownScroll,
         cdmFrame.SearchBox,
@@ -1004,7 +1004,7 @@ local function InjectScootTab()
         tab:Hide()
     end
 
-    -- Tab click: activate our tab (NO call to cdmFrame:SetDisplayMode — avoids taint)
+    -- Tab click: activate the Scoot tab (NO call to cdmFrame:SetDisplayMode — avoids taint)
     tab:SetCustomOnMouseUpHandler(function(t, button, upInside)
         if button == "LeftButton" and upInside then
             ActivateScootTab(cdmFrame, content, blizzElements, tab)
@@ -1021,7 +1021,7 @@ local function InjectScootTab()
             content:Hide()
             tab:SetChecked(false)
             -- Blizzard's SetDisplayMode already ran and restored its content.
-            -- Re-show the elements we hid as a safety measure:
+            -- Re-show the elements hidden earlier as a safety measure:
             for _, el in ipairs(blizzElements) do
                 if el then el:Show() end
             end
@@ -1083,8 +1083,8 @@ end
 -- Trigger injection from multiple entry points (all converge on idempotent fn)
 --------------------------------------------------------------------------------
 
--- 1. When Blizzard_CooldownViewer loads, and also hook OpenCooldownManagerSettings
---    once it exists (Scoot.lua loads after this file in the TOC)
+-- When Blizzard_CooldownViewer loads, also hook OpenCooldownManagerSettings
+-- once it exists (Scoot.lua loads after this file in the TOC)
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("ADDON_LOADED")
 loader:SetScript("OnEvent", function(self, event, loadedAddon)
@@ -1099,7 +1099,7 @@ loader:SetScript("OnEvent", function(self, event, loadedAddon)
     end
 end)
 
--- 3. Immediate check (e.g., after /reload when addon is already loaded)
+-- Immediate check (e.g., after /reload when addon is already loaded)
 if CooldownViewerSettings then
     C_Timer.After(0, InjectScootTab)
 end

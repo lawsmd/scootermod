@@ -23,7 +23,7 @@ local PartyFrames = addon.BarsPartyFrames
 local BarsOverlays = addon.BarsOverlays
 local BarsSmallFrames = addon.BarsSmallFrames
 
--- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+-- Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
 local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
@@ -60,8 +60,6 @@ local queuePowerBarReapply = Combat.queuePowerBarReapply
 local queueUnitFrameTextureReapply = Combat.queueUnitFrameTextureReapply
 local queueRaidFrameReapply = Combat.queueRaidFrameReapply
 local queuePartyFrameReapply = Combat.queuePartyFrameReapply
-
--- Note: Power bar debug trace/diagnostics moved to bars/debug.lua (addon.BarsDebug)
 
 -- Unit Frames: Copy Health/Power Bar Style settings (texture, color mode, tint)
 do
@@ -144,13 +142,6 @@ do
     local ensureRectPowerOverlay = BarsOverlays._ensureRectPowerOverlay
     local updateRectPowerOverlay = BarsOverlays._updateRectPowerOverlay
 
-    -- NOTE: raiseUnitTextLayers, updateBossRectOverlay, updateRectHealthOverlay,
-    -- ensureHeightClipContainer, reparentAnimatedLossBar, reparentHealPredictionBars,
-    -- pixelFloor are now internal to bars/overlays.lua
-
-    -- REMOVED: Overlay functions (raiseUnitTextLayers through ensureRectPowerOverlay)
-    -- now live in bars/overlays.lua as addon.BarsOverlays
-
     -- Expose helpers for other modules (Cast Bar styling, etc.)
     addon._ApplyToStatusBar = applyToBar
     addon._ApplyBackgroundToStatusBar = applyBackgroundToBar
@@ -198,8 +189,6 @@ do
             return
         end
 
-        -- REMOVED: Per-unit Pet/TargetOfTarget/FocusTarget blocks (487 lines)
-        -- now consolidated in bars/smallframes.lua as addon.BarsSmallFrames.applyForSmallUnit
         -- Boss unit frames commonly appear/update during combat (e.g., INSTANCE_ENCOUNTER_ENGAGE_UNIT / UPDATE_BOSS_FRAMES).
         -- IMPORTANT (taint): Even "cosmetic-only" writes to Boss unit frame regions (including SetAlpha on textures)
         -- can taint the Boss system and later block protected layout calls like BossTargetFrameContainer:SetSize().
@@ -261,12 +250,10 @@ do
         -- Target/Focus frames can be updated/rebuilt by Blizzard during combat (rapid target swaps, faction updates, etc.).
         -- Protected StatusBars/layout must NEVER be touched during combat, but visual-only overlays CAN safely be enforced
         -- (like ReputationColor) via SetAlpha + alpha enforcers. Do this BEFORE the combat early-return so the element
-        -- stays hidden even if Blizzard recreates the region while we're in combat.
+        -- stays hidden even if Blizzard recreates the region during combat.
         --
-        -- IMPORTANT: Blizzard may recreate the ReputationColor texture during rapid target changes. We must:
-        -- 1. Always apply alpha (even if _ScootAlphaEnforcerHooked is set on an old object)
-        -- 2. Always try to install enforcer (it will skip if already hooked on THIS object)
-        -- 3. Schedule a follow-up re-hide to catch late Blizzard updates
+        -- IMPORTANT: Blizzard may recreate the ReputationColor texture during rapid target changes.
+        -- Always apply alpha + install enforcer + schedule a follow-up re-hide to catch late updates.
         if unit == "Target" or unit == "Focus" then
             local function computeUseCustomBordersAlpha()
                 local db2 = addon and addon.db and addon.db.profile
@@ -379,7 +366,7 @@ do
 
         -- Target-of-Target can get refreshed frequently by Blizzard (even out of combat),
         -- which can reset its bar textures. Install a lightweight, throttled hook on the
-        -- ToT frame's Update() to re-assert our styling shortly after Blizzard updates it.
+        -- ToT frame's Update() to re-assert styling shortly after Blizzard updates it.
         if unit == "TargetOfTarget" and _G.hooksecurefunc then
             local tot = _G.TargetFrameToT
             local totState = getState(tot)
@@ -432,7 +419,7 @@ do
 
         -- FocusTarget can get refreshed frequently by Blizzard (even out of combat),
         -- which can reset its bar textures. Install a lightweight, throttled hook on the
-        -- FoT frame's Update() to re-assert our styling shortly after Blizzard updates it.
+        -- FoT frame's Update() to re-assert styling shortly after Blizzard updates it.
         if unit == "FocusTarget" and _G.hooksecurefunc then
             local fot = _G.FocusFrameToT
             local fotState = getState(fot)
@@ -633,7 +620,7 @@ do
                                         bossFrame.TargetFrameContent,
                                     }
                                     for _, target in ipairs(clearTargets) do
-                                        -- Don't clear the anchor frame itself (it's where we apply new borders)
+                                        -- Don't clear the anchor frame itself (borders are applied here)
                                         if target and target ~= anchorFrame then
                                             if addon.BarBorders and addon.BarBorders.ClearBarFrame then
                                                 addon.BarBorders.ClearBarFrame(target)
@@ -704,7 +691,7 @@ do
                             end -- if not healthBarHideTextureOnly
 
                             -- Boss frames can get refreshed by Blizzard (HealthUpdate, Update) which resets textures.
-                            -- Install hooks to re-assert our styling after Blizzard updates.
+                            -- Install hooks to re-assert styling after Blizzard updates.
                             local bossState = getState(bossFrame)
                             if _G.hooksecurefunc and bossState then
                                 local function installBossHealthHook(hookTarget, hookName, flagName)
@@ -941,7 +928,7 @@ do
                                         pb and pb:GetParent(),
                                     }
                                     for _, target in ipairs(clearTargets) do
-                                        -- Don't clear the anchor frame itself (it's where we apply new borders)
+                                        -- Don't clear the anchor frame itself (borders are applied here)
                                         if target and target ~= anchorFrame then
                                             if addon.BarBorders and addon.BarBorders.ClearBarFrame then
                                                 addon.BarBorders.ClearBarFrame(target)
@@ -1007,7 +994,7 @@ do
                             end
 
                             -- Boss power bars can get refreshed by Blizzard which resets textures.
-                            -- Install a hook to re-assert our styling after Blizzard updates.
+                            -- Install a hook to re-assert styling after Blizzard updates.
                             local bossState = getState(bossFrame)
                             if _G.hooksecurefunc and bossState and not bossState.bossPowerUpdateHooked then
                                 bossState.bossPowerUpdateHooked = true
@@ -1142,7 +1129,7 @@ do
             -- Apply background texture and color for Health Bar
             do
                 -- IMPORTANT: Default/clean profiles should not change the look of Blizzard's bars.
-                -- Only apply our background overlay if the user actually customized background settings.
+                -- Only apply the background overlay if the user actually customized background settings.
                 local function hasBackgroundCustomization()
                     local texKey = cfg.healthBarBackgroundTexture
                     if type(texKey) == "string" and texKey ~= "" and texKey ~= "default" then
@@ -1180,7 +1167,7 @@ do
 			-- When Target/Focus portraits are hidden, draw a rectangular overlay that fills the
 			-- right-side "chip" area using the same texture/tint as the health bar.
 			ensureRectHealthOverlay(unit, hb, cfg)
-            -- If restoring default texture and we lack a captured original, restore to the known stock atlas for this unit
+            -- If restoring default texture and no captured original exists, restore to the known stock atlas for this unit
             local isDefaultHB = (texKeyHB == "default" or not addon.Media.ResolveBarTexturePath(texKeyHB))
             if isDefaultHB and not getProp(hb, "ufOrigAtlas") and not getProp(hb, "ufOrigPath") then
 				local stockAtlas
@@ -1311,7 +1298,7 @@ do
                                 })
 							end
                             if not handled then
-                                -- Fallback: pixel (square) border drawn with our lightweight helper
+                                -- Fallback: pixel (square) border drawn with the lightweight helper
 								if addon.BarBorders and addon.BarBorders.ClearBarFrame then addon.BarBorders.ClearBarFrame(hb) end
                                 if addon.Borders and addon.Borders.ApplySquare then
 									local sqColor = tintEnabled and tintColor or {0, 0, 0, 1}
@@ -1407,7 +1394,7 @@ do
                     setProp(hb, "healthColorHooked", true)
                     _G.hooksecurefunc(hb, "SetStatusBarColor", function(self, ...)
                         if isEditModeActive() then return end
-                        -- Skip if we're the ones calling SetStatusBarColor (from applyValueBasedColor)
+                        -- Skip if Scoot is calling SetStatusBarColor (from applyValueBasedColor)
                         if getProp(self, "applyingValueBasedColor") then return end
                         -- CRITICAL: Do NOT call applyToBar during combat - it calls SetStatusBarTexture/SetVertexColor
                         -- on the protected StatusBar, which taints it and causes "blocked from an action" errors.
@@ -1626,14 +1613,14 @@ do
 
         local pb = resolvePowerBar(frame, unit)
         if pb then
-            -- Cache combat state once for this styling pass. We avoid all geometry
+            -- Cache combat state once for this styling pass. Avoid all geometry
             -- changes (width/height/anchors/offsets) while in combat to prevent
-            -- taint on protected unit frames (see taint.log: TargetFrameToT:Show()).
+            -- taint on protected unit frames (TargetFrameToT:Show() taint path).
             local inCombat = InCombatLockdown and InCombatLockdown()
 			local powerBarHidden = (cfg.powerBarHidden == true)
 			local powerBarHideTextureOnly = (cfg.powerBarHideTextureOnly == true)
 
-			-- Capture original alpha once so we can restore when the bar is un-hidden.
+			-- Capture original alpha once for restoration when the bar is un-hidden.
 			if pb.GetAlpha and getProp(pb, "origPBAlpha") == nil then
 				local ok, a = pcall(pb.GetAlpha, pb)
 				setProp(pb, "origPBAlpha", ok and (a or 1) or 1)
@@ -1712,7 +1699,7 @@ do
             -- Apply background texture and color for Power Bar
             do
                 -- IMPORTANT: Default/clean profiles should not change the look of Blizzard's bars.
-                -- Only apply our background overlay if the user actually customized background settings.
+                -- Only apply the background overlay if the user actually customized background settings.
                 local function hasBackgroundCustomization()
                     local texKey = cfg.powerBarBackgroundTexture
                     if type(texKey) == "string" and texKey ~= "" and texKey ~= "default" then
@@ -1889,7 +1876,7 @@ do
                                 local tint = cfgP.powerBarTint
 
                                 -- If color mode is "texture", the user wants the texture's original colors;
-                                -- in that case we allow Blizzard's SetStatusBarColor to stand.
+                                -- in that case Blizzard's SetStatusBarColor stands.
                                 if colorMode == "texture" then
                                     return
                                 end
@@ -2248,7 +2235,7 @@ do
                                 or (select(1, _G.GameFontNormal:GetFont()))
                             local size = tonumber(styleCfg.size) or 14
                             local outline = tostring(styleCfg.style or "OUTLINE")
-                            -- Set flag to prevent our SetFont hook from triggering a reapply loop
+                            -- Set flag to prevent the SetFont hook from triggering a reapply loop
                             local fsState = getState(fs)
                             if fsState then fsState.applyingFont = true end
                             if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, outline) elseif fs.SetFont then pcall(fs.SetFont, fs, face, size, outline) end
@@ -2560,7 +2547,7 @@ do
                         end
                     end
 				elseif not inCombat then
-					-- Not scalable (Target/Focus with default fill): ensure we restore any prior width/anchors/mask
+					-- Not scalable (Target/Focus with default fill): ensure restoration of any prior width/anchors/mask
 					local tex = pb.GetStatusBarTexture and pb:GetStatusBarTexture()
 					local mask = resolvePowerMask(unit)
 					-- Restore power bar frame
@@ -2706,7 +2693,7 @@ do
 					    else
 						    -- Restore (already done above in the restore-first step)
 						    -- Re-apply mask ONLY if both Width and Height are at 100%
-						    -- (Width scaling removes the mask, so we shouldn't re-apply it if Width is still scaled)
+						    -- (Width scaling removes the mask, so don't re-apply it if Width is still scaled)
 						    if pb and mask and widthPct == 100 then
 							    ensureMaskOnBarTexture(pb, mask)
 						    end
@@ -2716,7 +2703,7 @@ do
 							end
 					    end
 				    else
-					    -- Not scalable (Target/Focus with default fill): ensure we restore any prior height/anchors
+					    -- Not scalable (Target/Focus with default fill): ensure restoration of any prior height/anchors
 					    -- Restore power bar frame
 					    if pb and pbState.ufOrigHeight and pb.SetHeight then
 						    pcall(pb.SetHeight, pb, pbState.ufOrigHeight)
@@ -2867,18 +2854,8 @@ do
                     if addon.Borders and addon.Borders.HideAll then addon.Borders.HideAll(pb) end
                 end
 
-                -- NOTE: Spark height adjustment code was removed. The previous implementation
-                -- of shrinking the spark to prevent it from extending below custom borders
-                -- was causing worse visual artifacts than the original minor issue.
-                -- Letting Blizzard manage the spark naturally produces better results.
             end
         end
-
-        -- PlayerFrame_Update / TargetFrame_Update / FocusFrame_Update calls REMOVED —
-        -- calling these global Blizzard update functions from addon context taints the
-        -- registered system frames (PlayerFrame, TargetFrame, FocusFrame), causing secret
-        -- value errors when Edit Mode later iterates them. Blizzard's own event-driven
-        -- refresh cycle handles atlas/mask updates.
 
         -- Stock frame art (includes the health bar border)
         do
@@ -2940,7 +2917,7 @@ do
 
         -- Boss-specific frame art: Handle all 5 Boss frames (Boss1TargetFrame through Boss5TargetFrame)
         -- Unlike other unit frames where there's a single frame per unit, Boss frames have 5 individual frames
-        -- that all share the same config (db.unitFrames.Boss). We must apply hiding to each one.
+        -- that all share the same config (db.unitFrames.Boss). Apply hiding to each one.
         if unit == "Boss" then
             for i = 1, 5 do
                 local bossFrame = _G["Boss" .. i .. "TargetFrame"]
@@ -3016,8 +2993,8 @@ do
         -- Rationale: These elements (ReputationColor for Target/Focus, FrameFlash for Player, Flash for Target) have
         -- fixed positions that cannot be adjusted. Since Scoot allows users to reposition and
         -- resize health/power bars independently, these static overlays would remain in their original
-        -- positions while the bars they're meant to surround/backdrop move elsewhere. This creates
-        -- visual confusion, so we disable them when custom borders are active.
+        -- positions while the bars they're meant to surround/backdrop move elsewhere, causing
+        -- visual confusion. Disabled when custom borders are active.
         
         -- Hide ReputationColor frame for Target/Focus when Use Custom Borders is enabled
         if (unit == "Target" or unit == "Focus") and cfg.useCustomBorders then
@@ -3141,14 +3118,13 @@ do
     end
 
     ---------------------------------------------------------------------------
-    -- OPT-23: Snapshot-based skip guard for ApplyAllUnitFrameBarTextures.
+    -- Snapshot-based skip guard for ApplyAllUnitFrameBarTextures.
     -- When bar-related DB values haven't changed since the last full restyle,
-    -- skip the entire 7-unit dispatch.  Targeted per-unit calls via
+    -- skip the entire 7-unit dispatch. Targeted per-unit calls via
     -- ApplyUnitFrameBarTexturesFor() and deferred combat reapply bypass this.
     --
     -- MAINTENANCE: New bar DB keys MUST be added to BAR_CFG_KEYS / ALT_CFG_KEYS
     -- or their changes will be silently ignored until profile switch / /reload.
-    -- Cross-ref: hasAnyKey zero-touch guard at line ~1641.
     ---------------------------------------------------------------------------
     local lastBarSnapshot
 
@@ -3248,7 +3224,7 @@ do
     end
 
     function addon.ApplyAllUnitFrameBarTextures()
-        -- OPT-23: Skip full restyle when bar settings are unchanged.
+        -- Skip full restyle when bar settings are unchanged.
         local snapshot = buildBarSettingsSnapshot()
         if snapshot == lastBarSnapshot then return end
         lastBarSnapshot = snapshot
@@ -3268,39 +3244,13 @@ do
         safeApply("FocusTarget")
     end
 
-    -- Note: Vehicle/AlternatePower frame texture enforcement moved to bars/vehicles.lua
-    -- Note: Z-order hooks (installUFZOrderHooks) were vestigial and have been removed
-
     -- Pre-emptive hiding and alpha hooks are now provided by the Preemptive module
     addon.PreemptiveHideTargetElements = Preemptive.hideTargetElements
     addon.PreemptiveHideFocusElements = Preemptive.hideFocusElements
     addon.PreemptiveHideBossElements = Preemptive.hideBossElements
     addon.InstallEarlyUnitFrameAlphaHooks = Preemptive.installEarlyAlphaHooks
     addon.InstallBossFrameHooks = Preemptive.installBossFrameHooks
-
-    -- Note: Portal/Vehicle event handlers for power bar custom positioning have been
-    -- removed. The Custom Position feature is deprecated in favor of PRD (Personal
-    -- Resource Display) with Edit Mode positioning.
-
 end
-
--- Note: Raid Frame Health Bar Styling and Overlay have been moved to bars/raidframes.lua
--- The module provides: addon.ApplyRaidFrameHealthBarStyle, addon.ApplyRaidFrameHealthOverlays,
--- addon.RestoreRaidFrameHealthOverlays
-
--- Note: Raid Frame Text Styling has been moved to bars/raidframes.lua
--- The module provides: addon.ApplyRaidFrameTextStyle, addon.ApplyRaidFrameNameOverlays,
--- addon.RestoreRaidFrameNameOverlays, addon.ApplyRaidFrameStatusTextStyle, addon.ApplyRaidFrameGroupTitlesStyle
-
-
--- Note: Party Frame Health Bar Styling and Overlay have been moved to bars/partyframes.lua
--- The module provides: addon.ApplyPartyFrameHealthBarStyle, addon.ApplyPartyFrameHealthOverlays,
--- addon.RestorePartyFrameHealthOverlays
-
--- Note: Party Frame Text Styling has been moved to bars/partyframes.lua
--- The module provides: addon.ApplyPartyFrameTextStyle, addon.ApplyPartyFrameNameOverlays,
--- addon.RestorePartyFrameNameOverlays, addon.ApplyPartyFrameTitleStyle
-
 
 -- Restore all party frames to stock Blizzard appearance (profile switch / category reset).
 
@@ -3332,6 +3282,4 @@ function addon.RestoreAllRaidFrameOverlays()
     end
 end
 
--- Note: Value-based health bar coloring moved to bars/valuecolor.lua
--- (UNIT_HEALTH event handler, SetValue hooks, opacity reassertion)
 

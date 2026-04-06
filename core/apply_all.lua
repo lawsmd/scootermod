@@ -1,3 +1,4 @@
+-- apply_all.lua - Batch style application across component categories
 local addonName, addon = ...
 
 addon.ApplyAll = addon.ApplyAll or {}
@@ -6,10 +7,7 @@ local os_time = _G and _G.time
 
 local FONT_KEYS = { fontFace = true }
 
--- Bar texture keys vary by system:
--- - Cooldown Manager/PRD use: styleForegroundTexture, styleBackgroundTexture
--- - Unit Frames use: healthBarTexture, healthBarBackgroundTexture, powerBarTexture, powerBarBackgroundTexture
--- - Cast Bars use: castBarTexture, castBarBackgroundTexture
+-- Bar texture keys by system
 local FG_TEXTURE_KEYS = {
     styleForegroundTexture = true,
     healthBarTexture = true,
@@ -23,9 +21,7 @@ local BG_TEXTURE_KEYS = {
     castBarBackgroundTexture = true,
 }
 
--- Font settings are stored in deeply nested tables that only get created when
--- the user visits those settings panels. We must ensure these tables exist
--- before ApplyAll can traverse and update their fontFace keys.
+-- Ensure font tables exist before ApplyAll traverses them
 
 -- Unit Frame font structures
 local UNIT_FRAME_UNITS = { "Player", "Target", "Focus", "Pet" }
@@ -40,8 +36,7 @@ local UNIT_FRAME_TEXT_KEYS = {
 
 local FONT_DEFAULT = { fontFace = "FRIZQT__" }
 
--- Generic structure-ensurer driven by declarative specs.
--- Each spec: { root, items, keys, default, [path] }
+-- Generic structure-ensurer driven by declarative specs
 local function ensureStructures(profile, specs)
     if not profile then return end
     for _, spec in ipairs(specs) do
@@ -86,8 +81,7 @@ local CAST_BAR_TEXTURE_KEYS = {
     "castBarBackgroundTexture",
 }
 
--- Cooldown Manager components use inline fallbacks for text settings, so they
--- don't get initialized by GetDefaults(). We must create them explicitly.
+-- CDM components use inline fallbacks; create text setting tables explicitly
 local COOLDOWN_COMPONENT_IDS = {
     "essentialCooldowns",
     "utilityCooldowns",
@@ -295,9 +289,7 @@ function ApplyAll:ApplyFonts(fontKey, opts)
         return buildResult(false, 0, "noSelection")
     end
 
-    -- Ensure font structures exist before traversing.
-    -- These nested tables are lazily created when the user visits settings panels,
-    -- so we must ensure they exist for ApplyAll to find and update them.
+    -- Font tables are lazily created when settings panels are visited; ensure they exist.
     ensureStructures(profile, FONT_SPECS)
 
     -- Skip the applyAll state table and sctDamage component.

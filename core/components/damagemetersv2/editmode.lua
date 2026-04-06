@@ -1,3 +1,4 @@
+-- damagemetersv2/editmode.lua - Position save/restore for Edit Mode integration
 local _, addon = ...
 local DM2 = addon.DamageMetersV2
 

@@ -1,3 +1,4 @@
+-- Scoot.lua - Addon entry point and AceAddon bootstrap
 local addonName, addon = ...
 
 LibStub("AceAddon-3.0"):NewAddon(addon, "Scoot", "AceEvent-3.0")
@@ -17,7 +18,7 @@ function addon:Print(message)
 end
 
 -- Open Blizzard's Cooldown Manager / Cooldown Viewer settings UI.
--- Returns true if we successfully opened a target frame, false otherwise.
+-- Returns true if a target frame was opened, false otherwise.
 -- No combat check needed - Blizzard's CDM settings work during combat.
 function addon:OpenCooldownManagerSettings()
     local opened = false
@@ -571,7 +572,4 @@ function SlashCmdList.SCOOTDMRESET(msg, editBox)
 end
 
 
--- NOTE: PLAYER_TARGET_CHANGED is handled in core/init.lua via PLAYER_TARGET_CHANGED()
--- which calls RefreshOpacityState() - this is combat-safe and properly updates opacity
--- for all components (Action Bars, CDM, Auras, etc.) without blocking during combat.
--- Do NOT register a duplicate handler here as it would overwrite the init.lua handler.
+-- PLAYER_TARGET_CHANGED is handled in core/init.lua — do not duplicate here.

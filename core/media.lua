@@ -1,12 +1,11 @@
+-- media.lua - Bar texture registry and status bar styling
 local addonName, addon = ...
 
 addon.Media = addon.Media or {}
 
 local BAR_MEDIA_PREFIX = "Interface\\AddOns\\Scoot\\media\\bar\\"
 
--- Track foreground/background state per StatusBar frame (weak keys for GC)
--- Using a local table instead of writing to Blizzard frames avoids taint
--- that causes secret value errors when Edit Mode iterates system frames
+-- Per-bar state (weak keys). Local table avoids tainting Blizzard frames.
 local barFrameState = setmetatable({}, { __mode = "k" })
 
 -- Registry of bar textures bundled with Scoot. Keys are stable identifiers.
@@ -199,10 +198,7 @@ function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgro
 		bgPath = "UI-HUD-CoolDownManager-Bar"
 	end
 
-	-- Foreground (status bar fill)
-	-- Guard: Only apply texture if it's actually changing. This prevents flickering on
-	-- StatusBars with no progress (e.g., infinite/timer-less buffs in Tracked Bars) when
-	-- unrelated settings trigger ApplyStyles() and cause redundant SetStatusBarTexture calls.
+	-- Skip redundant SetStatusBarTexture calls to prevent flickering on timer-less bars
 	if barFrame.SetStatusBarTexture then
 		if fgPath then
 			local state = barFrameState[barFrame]
@@ -222,8 +218,7 @@ function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgro
 		end
 	end
 
-	-- Background: prefer our own background texture anchored to the bar
-	-- Use weak-key table to avoid tainting Blizzard system frames
+	-- Background overlay (avoids tainting Blizzard system frames)
 	local state = barFrameState[barFrame] or {}
 	barFrameState[barFrame] = state
 	if not state.bg then
@@ -231,7 +226,6 @@ function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgro
 		state.bg:SetAllPoints(barFrame)
 	end
 	if bgPath then
-		-- Guard: Only update background texture if it's actually changing
 		local bgNeedsUpdate = state.bgPath ~= bgPath
 		if bgNeedsUpdate then
 			state.bgPath = bgPath
@@ -243,18 +237,17 @@ function addon.Media.ApplyBarTexturesToBarFrame(barFrame, foregroundKey, backgro
 				pcall(state.bg.SetTexture, state.bg, bgPath)
 			end
 		end
-		-- Apply opacity (always check as this can change independently)
 		local opacity = tonumber(backgroundOpacity) or 50
 		opacity = math.max(0, math.min(100, opacity)) / 100
 		pcall(state.bg.SetAlpha, state.bg, opacity)
 		state.bg:Show()
 	else
-		-- If no background selected, hide our overlay and let stock show
+		-- No background selected; hide overlay and let stock show
 		state.bgPath = nil
 		state.bg:Hide()
 	end
 
-	-- Dim the stock XML background if present so our overlay is visible
+	-- Dim the stock XML background so the overlay is visible
 	for _, region in ipairs({ barFrame:GetRegions() }) do
 		if region and region.GetObjectType and region:GetObjectType() == "Texture" then
 			pcall(region.SetAlpha, region, 0.15)

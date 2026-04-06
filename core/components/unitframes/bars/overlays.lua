@@ -35,7 +35,7 @@ local function setProp(frame, key, value)
     end
 end
 
--- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+-- Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
 local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 
 -- Resolver functions
@@ -680,7 +680,7 @@ local function reparentAnimatedLossBar(bar, clipContainer, heightPct)
             -- Re-anchor to match the bar position within the clip container
             animatedLossBar:ClearAllPoints()
             animatedLossBar:SetAllPoints(bar)
-            -- Ensure it renders behind our overlay (lower sublevel in OVERLAY layer)
+            -- Ensure it renders behind the Scoot overlay (lower sublevel in OVERLAY layer)
             if animatedLossBar.SetDrawLayer then
                 pcall(animatedLossBar.SetDrawLayer, animatedLossBar, "OVERLAY", 1)
             end
@@ -801,11 +801,11 @@ local function updateRectHealthOverlay(unit, bar)
     -- PetFrame's managed UnitFrame updates (heal prediction sizing) can be triggered by
     -- innocuous StatusBar reads from addon code, and may hard-error due to "secret values" inside
     -- Blizzard_UnitFrame (e.g., myCurrentHealAbsorb comparisons). This overlay is purely cosmetic,
-    -- so we disable it for Pet to guarantee preset/profile application can't provoke that path.
+    -- so it is disabled for Pet to guarantee preset/profile application can't provoke that path.
     if st and st.rectDisabledForSecretValues then
         -- Important: do not call methods (Hide/Show/SetWidth/etc.) from inside the
-        -- bar:SetValue / bar:SetMinMaxValues hook path when we're in a "secret value"
-        -- environment. This overlay is cosmetic; we prefer a complete no-op.
+        -- bar:SetValue / bar:SetMinMaxValues hook path in a "secret value"
+        -- environment. The overlay is cosmetic; a complete no-op is preferred.
         return
     end
     -- Instead of reading values (GetMinMaxValues, GetValue, GetWidth) which return
@@ -821,7 +821,7 @@ local function updateRectHealthOverlay(unit, bar)
     overlay:Show()
 
     -- CRITICAL: Hide Blizzard's native texture(s) so they don't show through as white.
-    -- The overlay is our controlled texture that receives the value-based color.
+    -- The overlay is a Scoot-controlled texture that receives the value-based color.
     -- Without hiding the native texture, you see "white mixed with color" at low alpha
     -- and "pure white" at full alpha.
     if statusBarTex and statusBarTex.SetAlpha then
@@ -839,7 +839,7 @@ end
 
 -- Power bar foreground overlay: addon-owned texture that sits above the StatusBar fill.
 -- Unlike the health overlay (which fills portrait gaps), this overlay exists to persist
--- custom textures/colors through combat. Because it's our own texture (not a protected
+-- custom textures/colors through combat. Because it's a Scoot-owned texture (not a protected
 -- StatusBar region), no combat guard is needed.
 local function updateRectPowerOverlay(unit, bar)
     local st = getState(bar)
@@ -883,7 +883,7 @@ local function ensureRectHealthOverlay(unit, bar, cfg)
     -- - Target/Focus: activate when portrait is hidden (fills portrait cut-out on right side)
     -- - Player/TargetOfTarget/Pet: activate when using custom borders (fills top-right corner chip in mask)
     -- - ANY unit: activate when using non-default color mode (custom, class, value, texture)
-    --   This ensures the overlay system handles "Color by Value" instead of trying to modify
+    --   Ensures the overlay system handles "Color by Value" instead of trying to modify
     --   Blizzard's protected textures directly.
     local shouldActivate = false
     local st = getState(bar)
@@ -916,7 +916,7 @@ local function ensureRectHealthOverlay(unit, bar, cfg)
         shouldActivate = (ufCfg.useCustomBorders == true) or needsOverlayForStyling
         st.rectReverseFill = false -- FoT health bar always fills left-to-right
     elseif type(unit) == "string" and string.lower(unit) == "pet" then
-        -- PetFrame has a small top-right "chip" when we hide Blizzard's border textures
+        -- PetFrame has a small top-right "chip" when Blizzard's border textures are hidden
         -- and replace them with a custom border. Use the same overlay pattern as Player/ToT.
         shouldActivate = (ufCfg.useCustomBorders == true) or needsOverlayForStyling
         st.rectReverseFill = false -- Pet health bar always fills left-to-right
@@ -984,8 +984,8 @@ local function ensureRectHealthOverlay(unit, bar, cfg)
 
         -- Drive overlay width from the health bar's own value/size changes.
         -- NOTE: No combat guard needed here because updateRectHealthOverlay() only
-        -- operates on ScootRectFill (our own child texture), not Blizzard's
-        -- protected StatusBar. Cosmetic operations on our own textures are safe.
+        -- operates on ScootRectFill (a Scoot-owned child texture), not Blizzard's
+        -- protected StatusBar. Cosmetic operations on Scoot-owned textures are safe.
         if _G.hooksecurefunc and not st.rectHooksInstalled then
             st.rectHooksInstalled = true
             _G.hooksecurefunc(bar, "SetValue", function(self)

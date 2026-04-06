@@ -1,3 +1,4 @@
+-- barborders.lua - Taint-safe bar border styling for status bars
 local addonName, addon = ...
 
 addon.BarBorders = addon.BarBorders or {}

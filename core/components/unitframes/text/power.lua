@@ -1,3 +1,9 @@
+--------------------------------------------------------------------------------
+-- text/power.lua
+-- Power (mana/energy/rage/etc.) text font styling, visibility enforcement, and
+-- positioning for all unit frames.
+--------------------------------------------------------------------------------
+
 local addonName, addon = ...
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
@@ -38,12 +44,12 @@ do
 		if unit == "Pet" then return _G.PetFrame end
 	end
 
-	-- OPT-25: weak-key cache for power text FontString lookups
+	--weak-key cache for power text FontString lookups
 	local _ptFSCache = setmetatable({}, { __mode = "k" })
 
 	local function findFontStringByNameHint(root, hint)
 		if not root then return nil end
-		-- OPT-25: check cache
+		--check cache
 		local rootCache = _ptFSCache[root]
 		if rootCache then
 			local cached = rootCache[hint]
@@ -80,7 +86,7 @@ do
 			end
 		end
 		scan(root)
-		-- OPT-25: cache non-nil results
+		--cache non-nil results
 		if target then
 			if not _ptFSCache[root] then
 				_ptFSCache[root] = {}
@@ -177,14 +183,6 @@ do
 				end
 			end)
 		end
-	end
-
-	-- NOTE: SetFont/SetFontObject hooks removed for performance reasons.
-	-- Font persistence during Character Pane opening is handled by the Character Frame hook section.
-	-- Font persistence during instance loading can be handled via PLAYER_ENTERING_WORLD if needed.
-	-- The previous hooks called ApplyAll* functions on every font change which was too expensive.
-	local function hookPowerTextFontReset(fs, unit, textType)
-		-- No-op: hooks removed for performance
 	end
 
 	-- Styling helpers (defined at do-block scope for use by both applyForUnit and ApplyBossPowerTextStyling)
@@ -301,10 +299,8 @@ do
 		-- colorMode == "custom" uses styleCfg.color as-is
 		if fs.SetTextColor then pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1) end
 
-		-- Only modify width/alignment/position if alignment or offset is explicitly configured.
-		-- Prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
-		-- text positioning. Width/alignment changes are only appropriate when the user has
-		-- explicitly configured layout-related settings.
+		-- Only modify layout if alignment or offset is explicitly configured (avoids
+		-- Apply All Fonts inadvertently changing text positioning).
 		local hasLayoutCustomization = styleCfg.alignment ~= nil
 			or styleCfg.alignmentMode ~= nil
 			or (styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil))
@@ -409,8 +405,6 @@ do
 				-- trigger secret value errors on unit frame StatusBars).
 				if fs.ClearAllPoints and fs.SetPoint and parentBar then
 					fs:ClearAllPoints()
-					-- Anchor both left and right edges to span the bar
-					-- Apply small padding (2px) plus user X offset for text inset
 					local leftPad = 2 + ox
 					local rightPad = -2 + ox
 					pcall(fs.SetPoint, fs, "LEFT", parentBar, "LEFT", leftPad, yOffset)
@@ -421,7 +415,6 @@ do
 					pcall(fs.SetJustifyH, fs, alignment)
 				end
 
-				-- Force redraw to apply alignment visually
 				forceTextRedraw(fs)
 			end
 		end
@@ -446,7 +439,7 @@ do
 			hookPowerBarUpdateTextString(pb, unit)
 		end
 
-		-- OPT-25: reuse cached FontStrings if available (frame tree is stable)
+		--reuse cached FontStrings if available (frame tree is stable)
 		local leftFS, rightFS, textStringFS
 		local existingCache = addon._ufPowerTextFonts[unit]
 		if existingCache and existingCache.leftFS and existingCache.rightFS then
@@ -507,20 +500,13 @@ do
 			}
 		end
 
-        -- Install font reset hooks to reapply styling when Blizzard calls SetFontObject
-        hookPowerTextFontReset(leftFS, unit, "left")
-        hookPowerTextFontReset(rightFS, unit, "right")
-        hookPowerTextFontReset(textStringFS, unit, "center")
-
-        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
-        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce BOTH alpha=0 AND font styling when Blizzard updates.
-        -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
-        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
+        -- Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
+        -- Tri‑state: nil = don't touch; true = hide; false = show.
         local function applyPowerTextVisibility(fs, hiddenSetting, unitForHook)
             if not fs then return end
             local fstate = FS
             if not fstate then return end
-            -- OPT-31: Invalidate hot-path cache so settings changes propagate
+            --Invalidate hot-path cache so settings changes propagate
             if fstate then fstate.ClearProp(fs, "powerTextAppliedHidden") end
             if hiddenSetting == nil then
                 return
@@ -593,7 +579,6 @@ do
             fstate.MarkHooked(textStringFS, "powerTextCenterSetText")
             if _G.hooksecurefunc then
                 _G.hooksecurefunc(textStringFS, "SetText", function(self)
-                    -- Enforce hidden state immediately if configured
                     local st = FS
                     if st and st.IsHidden(self, "powerTextCenter") and self.SetAlpha then
                         pcall(self.SetAlpha, self, 0)
@@ -707,13 +692,11 @@ do
         if not cfg then
             return
         end
-        -- OPT-31: Zero-touch fast path — skip entirely when no visibility settings are configured
+        --Zero-touch fast path — skip entirely when no visibility settings are configured
         if rawget(cfg, "powerBarHidden") == nil and rawget(cfg, "powerPercentHidden") == nil and rawget(cfg, "powerValueHidden") == nil then return end
 
-        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
-        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
-        -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
-        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
+        -- Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
+        -- Tri‑state: nil = don't touch; true = hide; false = show.
         local function applyVisibility(fs, hiddenSetting)
             if not fs then return end
             local fstate = FS
@@ -721,7 +704,7 @@ do
             if hiddenSetting == nil then
                 return
             end
-            -- OPT-31: Skip if this visibility state is already applied
+            --Skip if this visibility state is already applied
             local currentApplied = fstate.GetProp(fs, "powerTextAppliedHidden")
             if currentApplied == hiddenSetting then return end
             local hidden = (hiddenSetting == true)

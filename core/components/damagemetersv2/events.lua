@@ -1,3 +1,4 @@
+-- damagemetersv2/events.lua - Event registration, timer ticker, combat state sync
 local _, addon = ...
 local DM2 = addon.DamageMetersV2
 
@@ -135,7 +136,7 @@ function DM2._InitializeEvents(comp)
     timerFrame._elapsed = 0
     timerFrame:SetScript("OnUpdate", OnTimerUpdate)
 
-    -- If we're already in combat when this loads, sync state
+    -- If already in combat when this loads, sync state
     if InCombatLockdown() then
         DM2._inCombat = true
         DM2._combatStartTime = GetTime()

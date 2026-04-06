@@ -1,3 +1,4 @@
+-- colors.lua - Class and power color lookup tables
 local addonName, addon = ...
 
 addon.ClassColors = {

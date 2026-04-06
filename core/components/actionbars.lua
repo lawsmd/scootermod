@@ -1,3 +1,4 @@
+-- actionbars.lua - Action bar component: opacity, hover behavior, Edit Mode integration
 local addonName, addon = ...
 
 local Component = addon.ComponentPrototype

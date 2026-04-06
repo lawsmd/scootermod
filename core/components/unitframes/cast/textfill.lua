@@ -1,3 +1,9 @@
+--------------------------------------------------------------------------------
+-- cast/textfill.lua
+-- Text-fill cast bar effect: character-level gradient fill that tracks cast
+-- progress, with spark overlay and Blizzard animation interception.
+--------------------------------------------------------------------------------
+
 local addonName, addon = ...
 local CB = addon.CastBars
 local getProp = CB._getProp
@@ -165,7 +171,7 @@ end
 
 -- One-time install of Show() hooks on decorative textures that Blizzard actively
 -- re-shows during casts (ShowSpark, FinishSpell, StandardFinish OnPlay, etc.).
--- Instead of fighting the animation state machine with Stop(), we let animations
+-- Instead of fighting the animation state machine with Stop(), let animations
 -- play through (so OnFinished callbacks fire) but keep their target textures hidden.
 local function installTextFillShowGuards(frame)
 	if getProp(frame, "textFillShowGuarded") then return end
@@ -343,7 +349,7 @@ local function activateEmpoweredTextFill(frame, elements, cfg, unit)
 
 			-- One-time Play() hooks on StageTier animation groups.
 			-- FinishAnim plays on cast completion (PlayFinishAnim), forces Glow alpha
-			-- to 1 via C++ animation, bypassing our SetAlpha(0). No OnFinished — safe to Stop().
+			-- to 1 via C++ animation, bypassing the SetAlpha(0) guard. No OnFinished — safe to Stop().
 			-- FlashAnim has setToFinalAlpha="true", no OnFinished — safe to Stop().
 			if not getProp(frame, "textFillStageTierAnimsHooked") then
 				setProp(frame, "textFillStageTierAnimsHooked", true)
@@ -525,7 +531,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 	end
 
 	-- One-time hooks on animation groups whose setToFinalAlpha="true" overrides
-	-- our SetAlpha(0) at the C++ level during playback.  Stop them immediately.
+	-- the SetAlpha(0) guard at the C++ level during playback.  Stop them immediately.
 	-- FlashAnim: no OnFinished callbacks in XML — safe.
 	-- StandardFinish: OnFinished calls SetTargetsShown(false), which hides targets — desired.
 	-- InterruptGlowAnim: excluded — handled by hideInterruptGlow Play() hook instead.
@@ -544,7 +550,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 		end
 	end
 
-	-- Hide our custom spark overlay when Blizzard calls HideSpark (cast complete / interrupt)
+	-- Hide the custom spark overlay when Blizzard calls HideSpark (cast complete / interrupt)
 	-- Also lock clipFrame to full width so filledText stays visible above unfilled elements
 	-- during the FadeOutAnim (prevents collapse when fill texture atlas changes in FinishSpell)
 	if not getProp(frame, "textFillHideSparkHooked") then
@@ -582,7 +588,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 		end)
 	end
 
-	-- Re-show our custom spark when Blizzard starts a new cast (ShowSpark)
+	-- Re-show the custom spark when Blizzard starts a new cast (ShowSpark)
 	if not getProp(frame, "textFillShowSparkHooked") then
 		setProp(frame, "textFillShowSparkHooked", true)
 		hooksecurefunc(frame, "ShowSpark", function(self)
@@ -656,7 +662,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 	local clipFrame = elements.clipFrame
 
 	-- clipFrame auto-inherits level from parent (frame) — no explicit set needed.
-	-- Only refresh sparkFrame relative to clipFrame (safe to read, it's our frame).
+	-- Only refresh sparkFrame relative to clipFrame (safe to read, it's a Scoot-owned frame).
 	if elements.sparkFrame then
 		elements.sparkFrame:SetFrameLevel(clipFrame:GetFrameLevel() + 1)
 	end
@@ -762,7 +768,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 			-- Read spark settings (same keys the normal spark block uses)
 			local sparkHidden = cfg.castBarSparkHidden == true
 			-- isEmpoweredCast not available here; styling.lua handles empowered override before calling
-			-- text-fill, so we trust the passed-in cfg state
+			-- text-fill, so the passed-in cfg state is trusted
 
 			if sparkHidden then
 				sparkTex:Hide()
@@ -969,8 +975,7 @@ local function syncTextFillText(frame, cfg)
 		local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode_tf, styleCfg_tf)
 		elements.filledText:SetText(addon.BuildColorRampString(rawText, r1, g1, b1, r2, g2, b2))
 		-- Apply matching per-character codes to frame.Text so both strings have identical
-		-- |cff escape code structure, ensuring consistent truncation rendering (pitfall #25)
-		local uc = cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5}
+		-- |cff escape code structure, ensuring consistent truncation rendering		local uc = cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5}
 		CB._rampApplying = true
 		pcall(spellFS.SetText, spellFS, addon.BuildColorRampString(rawText, uc[1], uc[2], uc[3], uc[1], uc[2], uc[3]))
 		CB._rampApplying = false

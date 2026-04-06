@@ -1,3 +1,4 @@
+-- inspector.lua - Table Inspector copy support
 local addonName, addon = ...
 
 --[[----------------------------------------------------------------------------
@@ -17,13 +18,13 @@ local function SafeCall(fn, ...)
 end
 
 -- Secret value handling: some getters return "secret" values that cannot be
--- used in string operations, comparisons, or arithmetic. We detect these by
+-- used in string operations, comparisons, or arithmetic. Detection is done by
 -- trying the operation in a pcall. IMPORTANT: Even comparing a secret to nil
 -- can fail, so ALL operations must be wrapped in pcall.
 
 -- Returns a guaranteed-safe string, or fallback if the value is a secret
 -- IMPORTANT: Even tostring(secret) can return a "tainted" value that
--- passes basic checks but fails in table.concat. We must verify the result
+-- passes basic checks but fails in table.concat. The result must be verified
 -- is a real Lua string type AND can be used in string operations.
 local function safeString(value, fallback)
     fallback = fallback or "<secret>"
@@ -39,7 +40,7 @@ local function safeString(value, fallback)
         local test = str .. ""
         -- Verify it has reasonable content (not a weird secret representation)
         if #test < 0 then return end -- length check
-        -- Final test: can we format it?
+        -- Final test: can it be formatted?
         local formatted = string.format("%s", str)
         if type(formatted) ~= "string" then return end
         result = str
@@ -365,7 +366,7 @@ local function ExtractFrameStackTooltipText()
         end
     end
 
-    -- Also try LinesContainer if present and we got nothing
+    -- Also try LinesContainer if present and nothing was found above
     local linesContainer = fs.LinesContainer
     if linesContainer and #lines == 0 then
         pcall(function()

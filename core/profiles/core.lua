@@ -1,3 +1,4 @@
+-- core.lua - Profile activation, CDM CVar enforcement, and reload sequencing
 local addonName, addon = ...
 
 addon.Profiles = addon.Profiles or {}
@@ -84,7 +85,7 @@ end
 -- All callers replaced with direct C_EditMode API reads (GetLayouts/SaveLayouts).
 
 -- Apply the profile's CDM override (if explicitly set) to the Blizzard CVar.
--- This is character-scoped in Blizzard, so we enforce per-profile by setting it
+-- This is character-scoped in Blizzard, so it is enforced per-profile by setting it
 -- when the active Scoot profile changes.
 local function ApplyCooldownViewerEnabledForActiveProfile(reason)
     if not addon:IsModuleEnabled("cooldownManager") then return end
@@ -117,7 +118,7 @@ local function ApplyCooldownViewerEnabledForActiveProfile(reason)
 
     -- Important: setting the CVar does not reliably hide already-visible CDM frames
     -- until the user toggles Blizzard's checkbox UI. If the profile explicitly disables
-    -- CDM, we must proactively hide the viewer frames so the UI matches the setting
+    -- CDM, the viewer frames must be proactively hidden so the UI matches the setting
     -- immediately (including right after /reload).
     --
     -- Intentionally does NOT force-show when enabling; Edit Mode + viewer visibility
@@ -144,7 +145,7 @@ local function ApplyCooldownViewerEnabledForActiveProfile(reason)
         end
 
         if InCombatLockdown and InCombatLockdown() then
-            -- Avoid touching potentially protected UI during combat; retry once we leave combat.
+            -- Avoid touching potentially protected UI during combat; retry after combat ends.
             if C_Timer and C_Timer.After then
                 C_Timer.After(0.1, function()
                     if not (InCombatLockdown and InCombatLockdown()) then
@@ -411,7 +412,7 @@ local function getCurrentSpecID()
     return specID
 end
 
--- Records the player's current spec so we can distinguish true mid-session spec changes
+-- Records the player's current spec to distinguish true mid-session spec changes
 -- from incidental events (like PLAYER_ENTERING_WORLD during loading screens).
 function Profiles:RecordCurrentSpec()
     local specID = getCurrentSpecID()
@@ -752,7 +753,7 @@ function Profiles:PromptReloadToProfile(layoutName, meta)
             ReloadUI()
         end,
         onCancel = function()
-            -- Abandon: clear pending activation so we don't surprise-reload on next load.
+            -- Abandon: clear pending activation to avoid a surprise-reload on next load.
             if addon and addon.db and addon.db.global then
                 addon.db.global.pendingProfileActivation = nil
             end
@@ -836,7 +837,7 @@ function Profiles:Initialize()
             self._reloadActivationLock = p.layoutName
             self._reloadActivationLockUntil = (GetTime and GetTime() or 0) + 3
             LogReload("Init:afterSwitch", { aceProfile = self.db:GetCurrentProfile(), pendingActive = self._pendingActiveLayout, lock = p.layoutName })
-            -- Note: we intentionally do not print a chat message for spec-triggered reloads.
+            -- Note: no chat message is printed for spec-triggered reloads.
         end
     end
 
@@ -1103,14 +1104,14 @@ function Profiles:SwitchToProfile(profileKey, opts)
     Debug("SwitchToProfile", profileKey, opts.reason and ("reason=" .. tostring(opts.reason)) or "", opts.skipLayout and "[skipLayout]" or "")
 
     -- Avoid reload loops / unnecessary reloads:
-    -- - PendingProfileActivation is consumed on load; we must switch immediately without reloading.
+    -- - PendingProfileActivation is consumed on load; the switch must happen immediately without reloading.
     -- - PresetActivationOnLoad similarly must not trigger another reload.
     local skipReload = opts.skipReload
         or opts.reason == "PendingProfileActivation"
         or opts.reason == "PresetActivationOnLoad"
         or opts.reason == "Initialize"
 
-    -- If this is a genuine switch (different profile) and we're not in a safe on-load path,
+    -- If this is a genuine switch (different profile) and not in a safe on-load path,
     -- force a reload so Blizzard can reinitialize baselines correctly.
     if not skipReload and self.db and self.db.GetCurrentProfile then
         local current = self.db:GetCurrentProfile()
@@ -1122,7 +1123,7 @@ function Profiles:SwitchToProfile(profileKey, opts)
             -- Carry a small amount of metadata for debugging/UX on next load
             local pendingMeta = opts.pendingMeta or { reason = opts.reason }
             -- ReloadUI() is protected unless triggered by a hardware event (e.g. a click).
-            -- SwitchToProfile can be reached from non-hardware events, so we must prompt.
+            -- SwitchToProfile can be reached from non-hardware events, so a prompt is needed.
             self:PromptReloadToProfile(profileKey, pendingMeta)
             return
         end
@@ -1231,7 +1232,7 @@ function Profiles:RefreshFromEditMode(origin)
     end
 
     if activeLayout and self._layoutLookup[activeLayout] then
-        -- If we recently consumed a pending profile activation, don't let stale LEO override it
+        -- If a pending profile activation was recently consumed, don't let stale LEO override it
         local now = GetTime and GetTime() or 0
         if self._reloadActivationLock and self._reloadActivationLockUntil then
             if activeLayout == self._reloadActivationLock then

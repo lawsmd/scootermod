@@ -1,3 +1,4 @@
+-- damagemetersv2/core.lua - V2 damage meter namespace, component registration, DB structure
 local addonName, addon = ...
 
 --------------------------------------------------------------------------------
@@ -97,7 +98,7 @@ addon:RegisterComponentInitializer(function(self)
     if not self:IsModuleEnabled("damageMeter", "damageMeterV2") then return end
 
     -- When V2 is active, ensure V1 sub-toggle is disabled.
-    -- This handles the case where moduleEnabled.damageMeter is still a boolean
+    -- Handles the case where moduleEnabled.damageMeter is still a boolean
     -- (existing profiles before sub-toggles were added).
     if self.SetModuleEnabled then
         self:SetModuleEnabled("damageMeter", "damageMeter", false)
@@ -223,7 +224,7 @@ addon:RegisterComponentInitializer(function(self)
 
     -- Bootstrap V2 on first PLAYER_ENTERING_WORLD.
     -- The component system's ApplyStyling gate may skip us (proxy/zero-touch),
-    -- so we self-bootstrap after DB linking is complete.
+    -- so it self-bootstraps after DB linking is complete.
     local bootstrapFrame = CreateFrame("Frame")
     bootstrapFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     bootstrapFrame:SetScript("OnEvent", function(f)

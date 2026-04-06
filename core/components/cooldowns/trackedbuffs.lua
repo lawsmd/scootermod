@@ -1,3 +1,4 @@
+-- trackedbuffs.lua - Tracked Buffs component definition and settings
 local addonName, addon = ...
 
 local Component = addon.ComponentPrototype

@@ -11,17 +11,13 @@ local SettingsBuilder = addon.UI.SettingsBuilder
 local Theme = addon.UI.Theme
 local Controls = addon.UI.Controls
 
--- State management for this renderer
--- CLEANUP NOTE:
---   1. ClearContent() - Cleans up when navigating AWAY from Rules
---   2. Rules.Render() - Cleans up when re-rendering Rules (refresh)
--- Both are needed to ensure proper cleanup in all scenarios.
+-- State management for this renderer (cleared by both ClearContent and Rules.Render)
 Rules._state = {
     editingRules = {},      -- Track which rules are in edit mode (keyed by rule.id)
     breadcrumbs = {},       -- Track partial breadcrumb selections (keyed by rule.id)
     cardFrames = {},        -- Recycled card frames
     dividerFrames = {},     -- Recycled divider frames
-    currentControls = {},   -- Track created controls for cleanup (see CLEANUP note above)
+    currentControls = {},   -- Track created controls for cleanup (cleared by both ClearContent and Render)
 }
 
 -- Constants for Rules UI layout

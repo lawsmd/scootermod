@@ -1,3 +1,4 @@
+-- offscreenunlock.lua - Off-screen drag unlock for Player and Target frames
 local addonName, addon = ...
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
@@ -19,29 +20,17 @@ local function setProp(frame, key, value)
 	end
 end
 
---[[----------------------------------------------------------------------------
-    Unit Frame Off-Screen Drag Unlock (Player + Target)
-
-    Purpose:
-      Allow users (notably Steam Deck / handheld setups) to drag unit frames partially
-      off-screen in Edit Mode by disabling Blizzard's screen clamping.
-
-    Key design constraints:
-      - Do NOT move the frame ourselves (no drift). Edit Mode remains the source of
-        truth for the frame's position.
-      - Be combat-safe: avoid mutating protected unit frames during combat.
-        If called during combat, defer to PLAYER_REGEN_ENABLED.
-      - Keep it lightweight: no hooks or per-frame updates; only run on explicit
-        triggers (settings change, ApplyStyles, Edit Mode layout updates).
-
-    Implementation strategy:
-      The original working slider called SetClampedToScreen(false), 
-      SetClampRectInsets(0,0,0,0), and SetIgnoreFramePositionManager(true).
-      This behavior is replicated with a checkbox instead of a slider.
-      
-      NOTE: ReanchorFrame/SetPoint techniques were tried and caused the frame to
-      snap to the right side of the screen. Do NOT call position-changing APIs.
-----------------------------------------------------------------------------]]--
+-- Disables Blizzard's screen clamping so Edit Mode can drag frames off-edge
+-- (primarily for Steam Deck / handheld setups).
+--
+-- Constraints:
+--   No frame movement -- Edit Mode is the position source of truth.
+--   Combat-safe: defers mutations to PLAYER_REGEN_ENABLED.
+--   Lightweight: runs only on settings change / ApplyStyles / layout update.
+--
+-- Uses SetClampedToScreen(false), SetClampRectInsets(0,0,0,0), and
+-- SetIgnoreFramePositionManager(true). Checkbox replaces the original slider.
+-- NOTE: ReanchorFrame/SetPoint caused right-side snap; do NOT call position APIs.
 
 local UNITS = { "Player", "Target" }
 
@@ -126,24 +115,12 @@ local combatWatcher
 -- The original working slider used SetClampRectInsets(0,0,0,0) to disable clamping.
 local CLAMP_ZERO = 0
 
---[[----------------------------------------------------------------------------
-    The Slider's Secret: SetPoint with offset adjustment
-    
-    The original working slider called SetPoint to apply an X offset. We've been
-    avoiding SetPoint because it sometimes re-anchored frames to unrelated UI
-    elements (action bars). However, the slider DID work, so let's try a safer
-    technique:
-    
-    When the checkbox is enabled, we:
-    1. Read the frame's CURRENT anchor
-    2. Only adjust the X offset by a tiny amount (0.1 px) - imperceptible
-    3. Apply this via SetPoint using the SAME anchor targets
-    
-    This differs from ReanchorFrame (which wrote to Edit Mode layout) - we're
-    only adjusting the live frame position without touching Edit Mode data.
-----------------------------------------------------------------------------]]--
+-- A 0.1px SetPoint nudge during Edit Mode triggers the internal state change
+-- that permits off-screen dragging. Adjusts live frame position using the
+-- frame's existing anchor targets -- does not write to Edit Mode layout data.
+-- (ReanchorFrame caused re-anchoring to unrelated UI elements.)
 
--- Track whether we've applied the nudge this Edit Mode session
+-- Tracks whether the nudge has been applied this Edit Mode session
 local _nudgeApplied = {}
 
 local function _ApplySliderStyleNudge(unit, frame)

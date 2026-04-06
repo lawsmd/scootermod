@@ -1,3 +1,4 @@
+-- damagemetersv2/styling.lua - Visual styling, JiberishIcons integration, bar appearance
 local _, addon = ...
 local DM2 = addon.DamageMetersV2
 

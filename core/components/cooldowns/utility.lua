@@ -1,3 +1,4 @@
+-- utility.lua - Utility Cooldowns component definition and settings
 local addonName, addon = ...
 
 local Component = addon.ComponentPrototype

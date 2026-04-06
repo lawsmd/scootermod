@@ -15,7 +15,7 @@ local FS = addon.FrameState
 addon.BarsAlpha = addon.BarsAlpha or {}
 local Alpha = addon.BarsAlpha
 
--- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+-- Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
 local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 
 --------------------------------------------------------------------------------

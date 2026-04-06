@@ -114,7 +114,6 @@ function Builder:AddSection(title, options)
         self._currentY = self._currentY - SECTION_SPACING
     end
 
-    -- Create section header frame
     local header = CreateFrame("Frame", nil, scrollContent)
     header:SetHeight(SECTION_HEADER_HEIGHT)
     header:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 0, self._currentY)
@@ -160,7 +159,6 @@ function Builder:AddSection(title, options)
 
     table.insert(self._sections, header)
 
-    -- Update Y position
     self._currentY = self._currentY - SECTION_HEADER_HEIGHT
     self._inSection = true
 
@@ -201,7 +199,6 @@ function Builder:AddToggle(options)
         self._currentY = self._currentY - spacing
     end
 
-    -- Create toggle using Controls module
     local toggle = Controls:CreateToggle({
         parent = scrollContent,
         label = options.label,
@@ -216,21 +213,17 @@ function Builder:AddToggle(options)
     })
 
     if toggle then
-        -- Position the toggle
         toggle:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         toggle:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, toggle)
         toggle._searchLabel = options.label
         toggle._searchSection = self._parentSectionTitle
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = toggle
         end
 
-        -- Update Y position
         self._currentY = self._currentY - toggle:GetHeight()
 
         -- Propagate deferred height changes to parent collapsible
@@ -258,7 +251,6 @@ function Builder:AddDescription(text, options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
-    -- Add spacing
     if #self._controls > 0 or #self._sections > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
@@ -266,7 +258,6 @@ function Builder:AddDescription(text, options)
         self._currentY = self._currentY - options.topPadding
     end
 
-    -- Create description frame
     local frame = CreateFrame("Frame", nil, scrollContent)
     frame:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
     frame:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
@@ -312,7 +303,6 @@ function Builder:AddDescription(text, options)
 
     table.insert(self._controls, frame)
 
-    -- Update Y position
     self._currentY = self._currentY - frame:GetHeight()
     if options.bottomPadding then
         self._currentY = self._currentY - options.bottomPadding
@@ -332,12 +322,10 @@ function Builder:AddLabel(text)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
-    -- Add spacing before label
     if #self._controls > 0 or #self._sections > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create label frame
     local frame = CreateFrame("Frame", nil, scrollContent)
     frame:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
     frame:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
@@ -360,7 +348,6 @@ function Builder:AddLabel(text)
 
     table.insert(self._controls, frame)
 
-    -- Update Y position
     self._currentY = self._currentY - frame:GetHeight()
 
     return self
@@ -468,7 +455,6 @@ function Builder:AddCollapsibleSection(options)
         return self
     end
 
-    -- Add spacing before section
     if #self._controls > 0 or #self._sections > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
@@ -476,7 +462,6 @@ function Builder:AddCollapsibleSection(options)
     -- Store reference to onRefresh callback if set
     local onRefresh = self._onRefresh
 
-    -- Create the collapsible section control
     local section = Controls:CreateCollapsibleSection({
         parent = scrollContent,
         title = options.title,
@@ -502,11 +487,9 @@ function Builder:AddCollapsibleSection(options)
     -- Store outer refresh callback on section for dynamic height updates from nested controls
     section._outerOnRefresh = onRefresh
 
-    -- Position the section
     section:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
     section:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-    -- Track for cleanup
     table.insert(self._controls, section)
 
     -- Build content using an inner builder
@@ -609,7 +592,6 @@ function Builder:AddSelector(options)
         self._currentY = self._currentY - spacing
     end
 
-    -- Create selector using Controls module
     local selector = Controls:CreateSelector({
         parent = scrollContent,
         label = options.label,
@@ -627,16 +609,13 @@ function Builder:AddSelector(options)
     })
 
     if selector then
-        -- Position the selector
         selector:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         selector:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, selector)
         selector._searchLabel = options.label
         selector._searchSection = self._parentSectionTitle
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = selector
         end
@@ -657,7 +636,6 @@ function Builder:AddSelector(options)
             end
         end
 
-        -- Update Y position
         self._currentY = self._currentY - selector:GetHeight()
 
         -- Propagate deferred height changes to parent collapsible
@@ -710,12 +688,10 @@ function Builder:AddSlider(options)
         return self
     end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create slider using Controls module
     local slider = Controls:CreateSlider({
         parent = scrollContent,
         label = options.label,
@@ -743,16 +719,13 @@ function Builder:AddSlider(options)
     })
 
     if slider then
-        -- Position the slider
         slider:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         slider:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, slider)
         slider._searchLabel = options.label
         slider._searchSection = self._parentSectionTitle
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = slider
         end
@@ -776,7 +749,6 @@ function Builder:AddSlider(options)
             end
         end
 
-        -- Update Y position
         self._currentY = self._currentY - slider:GetHeight()
 
         -- Propagate deferred height changes to parent collapsible
@@ -817,12 +789,10 @@ function Builder:AddFontSelector(options)
         return self
     end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create font selector using Controls module
     local fontSelector = Controls:CreateFontSelector({
         parent = scrollContent,
         label = options.label,
@@ -834,21 +804,17 @@ function Builder:AddFontSelector(options)
     })
 
     if fontSelector then
-        -- Position the font selector
         fontSelector:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         fontSelector:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, fontSelector)
         fontSelector._searchLabel = options.label
         fontSelector._searchSection = self._parentSectionTitle
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = fontSelector
         end
 
-        -- Update Y position
         self._currentY = self._currentY - fontSelector:GetHeight()
     end
 
@@ -870,12 +836,10 @@ function Builder:AddBarTextureSelector(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create bar texture selector using Controls module
     local barTextureSelector = Controls:CreateBarTextureSelector({
         parent = scrollContent,
         label = options.label,
@@ -887,19 +851,15 @@ function Builder:AddBarTextureSelector(options)
     })
 
     if barTextureSelector then
-        -- Position the bar texture selector
         barTextureSelector:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         barTextureSelector:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, barTextureSelector)
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = barTextureSelector
         end
 
-        -- Update Y position
         self._currentY = self._currentY - barTextureSelector:GetHeight()
     end
 
@@ -933,12 +893,10 @@ function Builder:AddBarBorderSelector(options)
         return self
     end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create bar border selector using Controls module
     local barBorderSelector = Controls:CreateBarBorderSelector({
         parent = scrollContent,
         label = options.label,
@@ -954,21 +912,17 @@ function Builder:AddBarBorderSelector(options)
     })
 
     if barBorderSelector then
-        -- Position the bar border selector
         barBorderSelector:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         barBorderSelector:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, barBorderSelector)
         barBorderSelector._searchLabel = options.label
         barBorderSelector._searchSection = self._parentSectionTitle
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = barBorderSelector
         end
 
-        -- Update Y position
         self._currentY = self._currentY - barBorderSelector:GetHeight()
     end
 
@@ -1019,7 +973,6 @@ function Builder:AddTabbedSection(options)
         return self
     end
 
-    -- Add spacing before section
     if #self._controls > 0 or #self._sections > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
@@ -1030,7 +983,6 @@ function Builder:AddTabbedSection(options)
     -- Reference to parent collapsible (if nested inside one)
     local parentCollapsible = self._parentCollapsible
 
-    -- Create the tabbed section control
     local section = Controls:CreateTabbedSection({
         parent = scrollContent,
         tabs = options.tabs,
@@ -1052,11 +1004,9 @@ function Builder:AddTabbedSection(options)
 
     if not section then return self end
 
-    -- Position the section
     section:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
     section:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-    -- Track for cleanup
     table.insert(self._controls, section)
 
     -- Build content for each tab using inner builders
@@ -1152,12 +1102,10 @@ function Builder:AddColorPicker(options)
         return self
     end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create color picker using Controls module
     local colorPicker = Controls:CreateColorPicker({
         parent = scrollContent,
         label = options.label,
@@ -1173,21 +1121,17 @@ function Builder:AddColorPicker(options)
     })
 
     if colorPicker then
-        -- Position the color picker
         colorPicker:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         colorPicker:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, colorPicker)
         colorPicker._searchLabel = options.label
         colorPicker._searchSection = self._parentSectionTitle
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = colorPicker
         end
 
-        -- Update Y position
         self._currentY = self._currentY - colorPicker:GetHeight()
 
         -- Propagate deferred height changes to parent collapsible
@@ -1232,12 +1176,10 @@ function Builder:AddToggleColorPicker(options)
         return self
     end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create toggle color picker using Controls module
     local toggleColor = Controls:CreateToggleColorPicker({
         parent = scrollContent,
         label = options.label,
@@ -1255,21 +1197,17 @@ function Builder:AddToggleColorPicker(options)
     })
 
     if toggleColor then
-        -- Position the control
         toggleColor:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         toggleColor:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, toggleColor)
         toggleColor._searchLabel = options.label
         toggleColor._searchSection = self._parentSectionTitle
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = toggleColor
         end
 
-        -- Update Y position
         self._currentY = self._currentY - toggleColor:GetHeight()
 
         -- Propagate deferred height changes to parent collapsible
@@ -1316,12 +1254,10 @@ function Builder:AddSelectorColorPicker(options)
         return self
     end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create selector color picker using Controls module
     local selectorColor = Controls:CreateSelectorColorPicker({
         parent = scrollContent,
         label = options.label,
@@ -1342,21 +1278,17 @@ function Builder:AddSelectorColorPicker(options)
     })
 
     if selectorColor then
-        -- Position the control
         selectorColor:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         selectorColor:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, selectorColor)
         selectorColor._searchLabel = options.label
         selectorColor._searchSection = self._parentSectionTitle
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = selectorColor
         end
 
-        -- Update Y position
         self._currentY = self._currentY - selectorColor:GetHeight()
 
         -- Propagate deferred height changes to parent collapsible
@@ -1400,12 +1332,10 @@ function Builder:AddDualSlider(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create dual slider using Controls module
     local dualSlider = Controls:CreateDualSlider({
         parent = scrollContent,
         label = options.label,
@@ -1423,19 +1353,15 @@ function Builder:AddDualSlider(options)
     })
 
     if dualSlider then
-        -- Position the dual slider
         dualSlider:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         dualSlider:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, dualSlider)
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = dualSlider
         end
 
-        -- Update Y position
         self._currentY = self._currentY - dualSlider:GetHeight()
     end
 
@@ -1465,12 +1391,10 @@ function Builder:AddDualSelector(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create dual selector using Controls module
     local dualSelector = Controls:CreateDualSelector({
         parent = scrollContent,
         label = options.label,
@@ -1485,19 +1409,15 @@ function Builder:AddDualSelector(options)
     })
 
     if dualSelector then
-        -- Position the dual selector
         dualSelector:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         dualSelector:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, dualSelector)
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = dualSelector
         end
 
-        -- Update Y position
         self._currentY = self._currentY - dualSelector:GetHeight()
     end
 
@@ -1531,7 +1451,6 @@ function Builder:AddSelectorToggleRow(options)
         return self
     end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
@@ -1595,12 +1514,10 @@ function Builder:AddDualBarStyleRow(options)
         return self
     end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create dual bar style row using Controls module
     local dualBarStyle = Controls:CreateDualBarStyleRow({
         parent = scrollContent,
         label = options.label,
@@ -1623,21 +1540,17 @@ function Builder:AddDualBarStyleRow(options)
     })
 
     if dualBarStyle then
-        -- Position the dual bar style row
         dualBarStyle:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         dualBarStyle:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, dualBarStyle)
         dualBarStyle._searchLabel = options.label
         dualBarStyle._searchSection = self._parentSectionTitle
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = dualBarStyle
         end
 
-        -- Update Y position
         self._currentY = self._currentY - dualBarStyle:GetHeight()
     end
 
@@ -1661,12 +1574,10 @@ function Builder:AddTextInput(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create single-line edit box using Controls module
     local textInput = Controls:CreateSingleLineEditBox({
         parent = scrollContent,
         label = options.label,
@@ -1677,7 +1588,6 @@ function Builder:AddTextInput(options)
     })
 
     if textInput then
-        -- Position the text input
         textInput:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         textInput:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
@@ -1688,15 +1598,12 @@ function Builder:AddTextInput(options)
             end
         end)
 
-        -- Track for cleanup
         table.insert(self._controls, textInput)
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = textInput
         end
 
-        -- Update Y position
         self._currentY = self._currentY - textInput:GetHeight()
 
         -- Add description if provided
@@ -1740,12 +1647,10 @@ function Builder:AddMultiLineEditBox(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create multi-line edit box using Controls module
     local editBox = Controls:CreateMultiLineEditBox({
         parent = scrollContent,
         label = options.label,
@@ -1756,7 +1661,6 @@ function Builder:AddMultiLineEditBox(options)
     })
 
     if editBox then
-        -- Position the edit box
         editBox:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         editBox:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
@@ -1768,15 +1672,12 @@ function Builder:AddMultiLineEditBox(options)
             end)
         end
 
-        -- Track for cleanup
         table.insert(self._controls, editBox)
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = editBox
         end
 
-        -- Update Y position
         self._currentY = self._currentY - editBox:GetHeight()
     end
 
@@ -1791,12 +1692,10 @@ function Builder:AddPreview(options)
     local scrollContent = self._scrollContent
     if not scrollContent then return self end
 
-    -- Add item spacing
     if #self._controls > 0 then
         self._currentY = self._currentY - ITEM_SPACING
     end
 
-    -- Create preview using Controls module
     local preview = Controls:CreatePreview({
         parent = scrollContent,
         componentId = options.componentId,
@@ -1809,28 +1708,17 @@ function Builder:AddPreview(options)
     })
 
     if preview then
-        -- Position the preview
         preview:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", CONTENT_PADDING, self._currentY)
         preview:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -CONTENT_PADDING, self._currentY)
 
-        -- Track for cleanup
         table.insert(self._controls, preview)
 
-        -- Register by key for dynamic updates
         if options.key then
             self._controlsByKey[options.key] = preview
         end
 
-        -- Update Y position
         self._currentY = self._currentY - preview:GetHeight()
     end
 
     return self
 end
-
---------------------------------------------------------------------------------
--- Future Control Methods (stubs)
---------------------------------------------------------------------------------
-
--- AddButton: For action buttons
--- function Builder:AddButton(options) ... end

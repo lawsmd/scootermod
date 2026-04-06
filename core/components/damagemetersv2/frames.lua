@@ -1,3 +1,4 @@
+-- damagemetersv2/frames.lua - Window frame creation, header/bar/button construction, context menus
 local _, addon = ...
 local DM2 = addon.DamageMetersV2
 
@@ -351,11 +352,11 @@ function DM2._CreateWindow(windowIndex, comp)
     verticalTitle:SetText("")
     verticalTitle:Hide()
     -- Rotate 90 degrees counter-clockwise for vertical text
-    -- WoW doesn't support FontString rotation directly, so we use a workaround:
+    -- WoW doesn't support FontString rotation directly; workaround below:
     -- Put the text in a frame and rotate the frame... but WoW doesn't support
     -- frame rotation either. Use single-character-per-line approach instead.
 
-    -- For vertical title: we'll set the text as stacked characters in _UpdateTimerText
+    -- For vertical title: text is set as stacked characters in _UpdateTimerText
 
     -- Column headers (right side, created dynamically)
     local columnHeaders = {}

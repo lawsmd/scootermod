@@ -1,3 +1,4 @@
+-- base/utilities.lua - Shared component utilities: opacity, visibility, combat deferral, frame helpers
 local addonName, addon = ...
 
 local getState = addon.ComponentsUtil._getState

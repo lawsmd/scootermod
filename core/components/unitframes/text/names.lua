@@ -1,3 +1,9 @@
+--------------------------------------------------------------------------------
+-- text/names.lua
+-- Name and level text styling, class-colored names, visibility control, and
+-- positioning for all unit frames.
+--------------------------------------------------------------------------------
+
 local addonName, addon = ...
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
@@ -13,7 +19,7 @@ local safeOffset = SS.safeOffset
 local safePointToken = SS.safePointToken
 local safeGetWidth = SS.safeGetWidth
 
--- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+--Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
 local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 
 --- Unit Frames: Apply Name & Level Text styling (visibility, font, size, style, color, offset)
@@ -81,12 +87,12 @@ do
 		end
 	end
 
-	-- OPT-25: weak-key cache for name/level text FontString lookups
+	--weak-key cache for name/level text FontString lookups
 	local _nlFSCache = setmetatable({}, { __mode = "k" })
 
 	local function findFontStringByNameHint(root, hint)
 		if not (root and hint) then return nil end
-		-- OPT-25: check cache
+		--check cache
 		local rootCache = _nlFSCache[root]
 		if rootCache then
 			local cached = rootCache[hint]
@@ -113,7 +119,7 @@ do
 			end
 		end
 		scan(root)
-		-- OPT-25: cache non-nil results
+		--cache non-nil results
 		if target then
 			if not _nlFSCache[root] then
 				_nlFSCache[root] = {}
@@ -402,7 +408,7 @@ do
 							addon._ufNameBackdropBaseWidth[baseKey] = base
 						end
 					end
-					-- If the width can't be safely read a width (secret-value environment), skip cosmetics.
+					-- If the width can't be safely read (secret-value environment), skip cosmetics.
 					if not base or base <= 0 then
 						tex:Hide()
 						return
@@ -498,7 +504,7 @@ do
 							addon._ufNameBackdropBaseWidth[baseKey] = base
 						end
 					end
-					-- If the width can't be safely read a width (secret-value environment), skip cosmetics.
+					-- If the width can't be safely read (secret-value environment), skip cosmetics.
 					if not base or base <= 0 then
 						borderFrame:Hide()
 						return
@@ -1080,7 +1086,7 @@ do
 							addon._ufNameBackdropBaseWidth[unit] = base
 						end
 					end
-					-- If the width can't be safely read a width (secret-value environment), skip cosmetics.
+					-- If the width can't be safely read (secret-value environment), skip cosmetics.
 					if not base or base <= 0 then
 						tex:Hide()
 						return
@@ -1188,7 +1194,7 @@ do
 						addon._ufNameBackdropBaseWidth[unit] = base
 					end
 				end
-				-- If the width can't be safely read a width (secret-value environment), skip cosmetics.
+				-- If the width can't be safely read (secret-value environment), skip cosmetics.
 				if not base or base <= 0 then
 					borderFrame:Hide()
 					return

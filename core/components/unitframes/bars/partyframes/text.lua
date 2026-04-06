@@ -153,9 +153,7 @@ function addon.ApplyPartyFrameTextStyle()
         return
     end
 
-    -- Deprecated: Party Player Name styling is now driven by overlay FontStrings
-    -- (see ApplyPartyFrameNameOverlays). Avoid touching Blizzard's `frame.name`
-    -- so overlay clipping preserves stock truncation behavior.
+    -- Name styling delegates to overlay FontStrings (avoids touching Blizzard's frame.name).
     if addon.ApplyPartyFrameNameOverlays then
         addon.ApplyPartyFrameNameOverlays()
     end
@@ -165,8 +163,7 @@ local function installPartyFrameTextHooks()
     if addon._PartyFrameTextHooksInstalled then return end
     addon._PartyFrameTextHooksInstalled = true
 
-    -- Deprecated: name styling hooks must not touch Blizzard's `frame.name`.
-    -- Overlay system installs its own hooks (installPartyNameOverlayHooks()).
+    -- Name hooks are installed by the overlay system (installPartyNameOverlayHooks).
 end
 
 --------------------------------------------------------------------------------

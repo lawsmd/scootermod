@@ -27,7 +27,7 @@ local isEditModeActive = addon.BarsRaidFrames._isEditModeActive
 -- Over Absorb Glow Visibility
 --------------------------------------------------------------------------------
 -- Hides or shows the OverAbsorbGlow texture on raid frames.
--- This glow appears when absorb shields exceed the health bar width.
+-- Over-absorb glow appears when absorb shields exceed the health bar width.
 -- Frame paths:
 --   - CompactRaidGroup[1-8]Member[1-5].overAbsorbGlow (group layout)
 --   - CompactRaidFrame[1-40].overAbsorbGlow (combined layout)
@@ -344,7 +344,7 @@ addon.ApplyRaidHealPredictionClipping = RaidFrames.ApplyHealPredictionClipping
 -- Apply Custom Role Icons for Raid Frames
 --------------------------------------------------------------------------------
 -- Re-triggers Blizzard's CompactUnitFrame_UpdateRoleIcon on each raid frame.
--- Blizzard sets the default atlas, then our post-hook swaps to the custom set.
+-- Blizzard sets the default atlas, then the post-hook swaps to the custom set.
 
 function addon.ApplyRaidRoleIcons()
     local directApply = addon._applyCustomRoleIcon

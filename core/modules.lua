@@ -1,6 +1,4 @@
 -- modules.lua - Component-level module toggle system
--- Provides per-category enable/disable toggles that gate initialization.
--- Disabled modules never register event handlers, install hooks, or create proxy DBs.
 local _, addon = ...
 
 --------------------------------------------------------------------------------

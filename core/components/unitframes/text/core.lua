@@ -1,3 +1,9 @@
+--------------------------------------------------------------------------------
+-- text/core.lua
+-- Shared state, pre-emptive text hiding, and Character Pane / Edit Mode hooks
+-- for the unit frame text subsystem.
+--------------------------------------------------------------------------------
+
 local addonName, addon = ...
 
 -- Namespace for cross-file locals (text subsystem)

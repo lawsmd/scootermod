@@ -1,3 +1,9 @@
+--------------------------------------------------------------------------------
+-- text/health.lua
+-- Health text font styling, visibility enforcement, and positioning for all
+-- unit frames (Player, Target, Focus, Boss, Pet, ToT, FocusTarget).
+--------------------------------------------------------------------------------
+
 local addonName, addon = ...
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)
@@ -12,7 +18,7 @@ local safeGetWidth = SS.safeGetWidth
 -- Cross-file import: NAME_ANCHOR_MAP (defined in text/core.lua, loaded first in TOC)
 local NAME_ANCHOR_MAP = addon.UnitFrameText._NAME_ANCHOR_MAP
 
--- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+--Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
 local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 
 -- Unit Frames: Toggle Health % (LeftText) and Value (RightText) visibility per unit
@@ -43,12 +49,12 @@ do
 		if unit == "Pet" then return _G.PetFrame end
     end
 
-    -- OPT-25: weak-key cache for health text FontString lookups
+    --weak-key cache for health text FontString lookups
     local _htFSCache = setmetatable({}, { __mode = "k" })
 
     local function findFontStringByNameHint(root, hint)
         if not root then return nil end
-        -- OPT-25: check cache
+        --check cache
         local rootCache = _htFSCache[root]
         if rootCache then
             local cached = rootCache[hint]
@@ -85,7 +91,7 @@ do
             end
         end
         scan(root)
-        -- OPT-25: cache non-nil results
+        --cache non-nil results
         if target then
             if not _htFSCache[root] then
                 _htFSCache[root] = {}
@@ -126,21 +132,8 @@ do
         end
     end
 
-    -- Helper: determine whether the current player can ever have an Alternate Power Bar.
-    -- Intentionally keyed off spec IDs where possible so the check is cheap and future‑proof.
-    --
-    -- IMPORTANT (Druid nuance):
-    -- Some classes (notably DRUID) can surface the global AlternatePowerBar based on form/talents
-    -- even when the player's active spec is not the "typical" spec for that resource.
-    -- Example: Restoration Druid can talent into Moonkin Form, causing Astral Power to become the
-    -- main bar and mana to appear on the AlternatePowerBar.
-    --
-    -- Because the Settings UI should allow pre-configuration, DRUID is treated as class-capable.
-    -- Specs covered (per user guidance):
-    --   - Balance Druid      (specID = 102, class = DRUID)
-    --   - Shadow Priest      (specID = 258, class = PRIEST)
-    --   - Brewmaster Monk    (specID = 268, class = MONK)
-    --   - Elemental Shaman   (specID = 262, class = SHAMAN)
+    -- Check whether the current player can have an Alternate Power Bar.
+    -- DRUID is treated as class-capable (form/talent driven, not reliably spec-gated).
     local function playerHasAlternatePowerBar()
         if not UnitClass or not GetSpecialization or not GetSpecializationInfo then
             return false
@@ -193,14 +186,6 @@ do
                 end
             end)
         end
-    end
-
-    -- NOTE: SetFont/SetFontObject hooks removed for performance reasons.
-    -- Font persistence during Character Pane opening is handled by the Character Frame hook section.
-    -- Font persistence during instance loading can be handled via PLAYER_ENTERING_WORLD if needed.
-    -- The previous hooks called ApplyAll* functions on every font change which was too expensive.
-    local function hookHealthTextFontReset(fs, unit, textType)
-        -- No-op: hooks removed for performance
     end
 
     -- Shared text styling helpers (used by Player/Target/Focus/Pet AND Boss frames).
@@ -336,7 +321,7 @@ do
         local size = tonumber(styleCfg.size) or 14
         local outline = tostring(styleCfg.style or "OUTLINE")
 
-        -- Set flag to prevent the SetFont hook from triggering a reapply loop
+        -- Guard against reapply loop from SetFont hooks
         local fstate = FS
         if fstate then fstate.SetProp(fs, "applyingFont", true) end
         if addon.ApplyFontStyle then
@@ -379,10 +364,8 @@ do
             pcall(fs.SetTextColor, fs, c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
         end
 
-        -- Only modify width/alignment/position if alignment or offset is explicitly configured.
-        -- Prevents Apply All Fonts (which only sets fontFace) from inadvertently changing
-        -- text positioning. Width/alignment changes are only appropriate when the user has
-        -- explicitly configured layout-related settings.
+        -- Only modify layout if alignment or offset is explicitly configured (avoids
+        -- Apply All Fonts inadvertently changing text positioning).
         local hasLayoutCustomization = styleCfg.alignment ~= nil
             or styleCfg.alignmentMode ~= nil
             or (styleCfg.offset and (styleCfg.offset.x ~= nil or styleCfg.offset.y ~= nil))
@@ -524,7 +507,7 @@ do
             hookHealthBarUpdateTextString(hb, unit)
         end
 
-        -- OPT-25: reuse cached FontStrings if available (frame tree is stable)
+        --reuse cached FontStrings if available (frame tree is stable)
         local leftFS, rightFS, textStringFS
         local existingCache = addon._ufHealthTextFonts[unit]
         if existingCache and existingCache.leftFS and existingCache.rightFS then
@@ -582,20 +565,13 @@ do
             }
         end
 
-        -- Install font reset hooks to reapply styling when Blizzard calls SetFontObject
-        hookHealthTextFontReset(leftFS, unit, "left")
-        hookHealthTextFontReset(rightFS, unit, "right")
-        hookHealthTextFontReset(textStringFS, unit, "center")
-
-        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
-        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 AND font styling when Blizzard updates.
-        -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
-        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
+        -- Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
+        -- Tri‑state: nil = don't touch; true = hide; false = show.
         local function applyHealthTextVisibility(fs, hiddenSetting, unitForHook)
             if not fs then return end
             local fstate = FS
             if not fstate then return end
-            -- OPT-31: Invalidate hot-path cache so settings changes propagate
+            --Invalidate hot-path cache so settings changes propagate
             if fstate then fstate.ClearProp(fs, "healthTextAppliedHidden") end
             if hiddenSetting == nil then
                 return
@@ -788,13 +764,11 @@ do
         if not cfg then
             return
         end
-        -- OPT-31: Zero-touch fast path — skip entirely when no visibility settings are configured
+        --Zero-touch fast path — skip entirely when no visibility settings are configured
         if rawget(cfg, "healthPercentHidden") == nil and rawget(cfg, "healthValueHidden") == nil then return end
 
-        -- Helper: Apply visibility using SetAlpha (combat-safe) instead of SetShown.
-        -- Hooks Show(), SetAlpha(), and SetText() to re-enforce alpha=0 when Blizzard updates the element.
-        -- Tri‑state: nil means "don't touch"; true=hide; false=show (restore).
-        -- NOTE: Uses FrameState to avoid writing properties directly to Blizzard frames (causes taint).
+        -- Apply visibility using SetAlpha (combat-safe) instead of SetShown (taint-prone).
+        -- Tri‑state: nil = don't touch; true = hide; false = show.
         local function applyVisibility(fs, hiddenSetting)
             if not fs then return end
             local fstate = FS
@@ -802,7 +776,7 @@ do
             if hiddenSetting == nil then
                 return
             end
-            -- OPT-31: Skip if this visibility state is already applied
+            --Skip if this visibility state is already applied
             local currentApplied = fstate.GetProp(fs, "healthTextAppliedHidden")
             if currentApplied == hiddenSetting then return end
             local hidden = (hiddenSetting == true)

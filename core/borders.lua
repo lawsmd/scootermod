@@ -1,3 +1,4 @@
+-- borders.lua - Border container creation and styling for frames and textures
 local addonName, addon = ...
 
 addon.Borders = addon.Borders or {}
@@ -231,12 +232,10 @@ function Borders.ApplyCircle(frame, opts)
     -- Portrait is on BACKGROUND layer, sublevel 1
     -- The border should appear AROUND the portrait, not covering it
     -- SetBackdrop creates edges that don't fill the center
-    -- We'll use the same frame level as the portrait's parent, and SetBackdrop will handle the visual
     local layer = (type(opts.layer) == "string") and opts.layer or "OVERLAY"
     local layerSublevel = tonumber(opts.layerSublevel) or 0
     
-    -- Handle both Frame and Texture objects
-    -- Portrait frames are Textures, so we need to get their parent for frame-level operations
+    -- Portrait frames are Textures — get the parent for frame-level operations
     local frameObj = frame
     local parentFrame = frame:GetParent()
     local frameStrata = "LOW"
@@ -427,8 +426,7 @@ end
 function Borders.ApplyAtlas(frame, opts)
     if not frame or not opts or type(opts.atlas) ~= "string" then return end
 
-    -- If a Texture is passed (e.g., icon textures), wrap it in a small Frame so we
-    -- have a valid CreateTexture target and stable anchor bounds.
+    -- Textures lack CreateTexture; wrap in a small Frame for a valid border target.
     local originalFrame = frame  -- Keep reference for weak-key lookup
     if frame.GetObjectType and frame:GetObjectType() == "Texture" then
         local parent = frame:GetParent() or UIParent
@@ -493,8 +491,7 @@ end
 function Borders.ApplyTexture(frame, opts)
     if not frame or not opts or type(opts.texture) ~= "string" then return end
 
-    -- Same wrapper logic as ApplyAtlas: ensure we have a Frame target for borders
-    -- when a raw Texture is passed in.
+    -- Same wrapper logic as ApplyAtlas: ensure a Frame target exists for borders.
     local originalFrame = frame  -- Keep reference for weak-key lookup
     if frame.GetObjectType and frame:GetObjectType() == "Texture" then
         local parent = frame:GetParent() or UIParent

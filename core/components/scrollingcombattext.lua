@@ -1,3 +1,4 @@
+-- scrollingcombattext.lua - Scrolling Combat Text: global font face/style overrides
 local addonName, addon = ...
 
 local Component = addon.ComponentPrototype

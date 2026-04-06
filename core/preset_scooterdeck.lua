@@ -1,3 +1,4 @@
+-- preset_scooterdeck.lua - ScooterDeck preset data
 local addonName, addon = ...
 
 local Presets = addon.Presets
@@ -23,7 +24,7 @@ Presets:Register({
 
     -- Edit Mode layout payload (raw layoutInfo table).
     -- Capture/update via: /scoot debug editmode export "ScooterDeck"
-    -- NOTE: We intentionally do NOT ship the Blizzard Share string because there is no import API.
+    -- NOTE: Blizzard Share string intentionally omitted — no import API exists.
     -- EDITMODE_LAYOUT_START
     editModeLayout = {
   layoutName = "ScooterDeck",

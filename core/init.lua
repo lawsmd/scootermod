@@ -1,3 +1,4 @@
+-- init.lua - Addon initialization, defaults registration, and event routing
 local addonName, addon = ...
 
 addon.FeatureToggles = addon.FeatureToggles or {}
@@ -344,7 +345,7 @@ end
 local function handlePetOverlayEvent()
     -- IMPORTANT: PetFrame is an Edit Mode managed/protected system frame.
     -- Pending work is flagged during combat so it is always re-asserted on PLAYER_REGEN_ENABLED.
-    -- Experimental: we also allow in-combat alpha enforcement for PetFrameFlash to prevent
+    -- Experimental: also allows in-combat alpha enforcement for PetFrameFlash to prevent
     -- the red glow/ring from reappearing and persisting until combat ends.
     if InCombatLockdown and InCombatLockdown() then
         addon._pendingPetOverlaysEnforce = true
@@ -491,8 +492,7 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
         end
     end
     
-    -- NOTE: We previously had a method override on EditModeManagerFrame.NotifyChatOfLayoutChange
-    -- to suppress incorrect layout announcements during spec switches. This was removed because
+    -- NOTE: A method override on EditModeManagerFrame.NotifyChatOfLayoutChange was removed because
     -- method overrides cause PERSISTENT TAINT that propagates to unrelated Blizzard code.
     -- In 11.2.7, this taint was blocking ActionButton:SetAttribute() calls in the new
     -- "press and hold" system. The cosmetic benefit of suppressing announcements is not worth
@@ -521,7 +521,7 @@ function addon:PLAYER_ENTERING_WORLD(event, isInitialLogin, isReloadingUi)
             C_Timer.After(0.5, function()
                 if addon then
                     addon._scootSpecLoginGuard = false
-                    -- Record a stable baseline spec after login/reload so we can ignore
+                    -- Record a stable baseline spec after login/reload to ignore
                     -- non-spec-change triggers (like loading screens) later in the session.
                     if addon.Profiles and addon.Profiles.RecordCurrentSpec then
                         addon.Profiles:RecordCurrentSpec()

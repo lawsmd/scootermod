@@ -1,3 +1,4 @@
+-- spec.lua - Spec-based profile auto-switching
 local _, addon = ...
 local Profiles = addon.Profiles
 
@@ -74,7 +75,7 @@ function Profiles:CleanupOrphanedProfiles()
     end
 
     local protected = {
-        ["Default"] = true, -- AceDB shared default (we use AceDB:New(..., true))
+        ["Default"] = true, -- AceDB shared default (created via AceDB:New(..., true))
         ["Modern"] = true,  -- Blizzard preset layout name (may have a profile mirror)
         ["Classic"] = true, -- Blizzard preset layout name (may have a profile mirror)
     }
@@ -133,7 +134,7 @@ function Profiles:CheckForExternalDeletion()
         return
     end
 
-    -- Skip if we already prompted this session (avoid spamming on rapid events)
+    -- Skip if already prompted this session (avoid spamming on rapid events)
     if self._externalDeletionPrompted then
         return
     end
@@ -212,7 +213,7 @@ function Profiles:OnPlayerSpecChanged(opts)
 
     local specName = (GetSpecializationNameByID and GetSpecializationNameByID(specID)) or "unknown"
     -- ReloadUI() is protected unless triggered by a hardware event. Spec change events are not.
-    -- So we prompt a one-click dialog and perform ReloadUI() from the click handler.
+    -- A one-click dialog prompts the user and performs ReloadUI() from the click handler.
     self:PromptReloadToProfile(targetProfile, { reason = "SpecChanged", specID = specID, specName = specName })
 end
 

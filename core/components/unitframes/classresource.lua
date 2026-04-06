@@ -1,3 +1,4 @@
+-- classresource.lua - Class resource bar offset, scale, and visibility
 local addonName, addon = ...
 
 -- Reference to FrameState module for safe property storage (avoids writing to Blizzard frames)

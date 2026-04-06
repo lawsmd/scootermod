@@ -1,4 +1,4 @@
--- core/animations.lua - Centralized animation registry and factory
+-- animations.lua - Centralized animation registry and factory
 local addonName, addon = ...
 
 addon.Animations = addon.Animations or {}

@@ -1,3 +1,5 @@
+-- core.lua - Edit Mode integration helpers and setting resolution
+
 -- Central suppression check (used only during short post-copy window)
 local function _ShouldSuppressWrites()
     local prof = addon and addon.Profiles
@@ -586,7 +588,7 @@ end
 -- trigger Blizzard layout code that calls protected functions (e.g. PartyFrame:SetSize()) and
 -- surface as ADDON_ACTION_BLOCKED blaming Scoot.
 --
--- Policy: If we are in combat, queue the write and apply it immediately after combat ends.
+-- Policy: If in combat, queue the write and apply it immediately after combat ends.
 local function _EnsureEditModeCombatWriteWatcher()
     if not addon or not addon.EditMode then return end
     if addon.EditMode._combatWriteWatcher then return end
@@ -801,7 +803,7 @@ function addon.EditMode.Initialize()
     do
         local LEO_ot = LibStub and LibStub("LibEditModeOverride-1.0")
         if LEO_ot then
-            local sys = 12 -- Objective Tracker (confirmed via framestack and preset exports)
+            local sys = 12 -- Objective Tracker
             local displayType = _G.Enum and _G.Enum.EditModeSettingDisplayType
             local mgr = _G.EditModeSettingDisplayInfoManager
             local entries = mgr and mgr.systemSettingDisplayInfo and mgr.systemSettingDisplayInfo[sys]
@@ -958,12 +960,12 @@ function addon.EditMode.Initialize()
     end
 
     -- Fallback hook for clients/builds that don't fire EventRegistry callbacks reliably.
-    -- IMPORTANT: Hook EnterEditMode (not OnShow) so we don't accidentally close the panel
+    -- IMPORTANT: Hook EnterEditMode (not OnShow) to avoid accidentally closing the panel
     -- during our own "bounce EditModeManagerFrame" taint-clearing work.
     --
     -- Also handles per-system settings refresh: when Scoot changes Edit Mode
     -- settings (via SaveOnly/skipApply), the C-side storage is updated but the
-    -- system frames' internal settingMaps are stale. We read fresh data from C-side
+    -- system frames' internal settingMaps are stale. Fresh data is read from C-side
     -- and call UpdateSystem on each registered frame with the correct per-system
     -- systemInfo, WITHOUT writing to mgr.layoutInfo (which would taint the manager).
     if not addon._editModeClosePanelHooked and type(_G.hooksecurefunc) == "function" then

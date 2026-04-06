@@ -1,3 +1,4 @@
+-- vertical.lua - Tracked Bars vertical mode: data mirroring and stack layout
 local addonName, addon = ...
 
 local TB = addon.TB

@@ -799,7 +799,7 @@ local function applyHealthBarBorder(bar, cfg)
     end
 end
 
--- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
+-- Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC)
 local isEditModeActiveForBorders = addon.EditMode.IsEditModeActiveOrOpening
 
 -- Apply health bar borders to all party frames
@@ -914,7 +914,7 @@ end
 -- Hook Installation
 --------------------------------------------------------------------------------
 
--- OPT-28: Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC).
+-- Direct upvalue to the event-driven guard (editmode/core.lua loads first in TOC).
 -- Skip all CompactUnitFrame hooks when Edit Mode is active to avoid taint.
 local isEditModeActive = addon.EditMode.IsEditModeActiveOrOpening
 

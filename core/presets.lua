@@ -1,3 +1,4 @@
+-- presets.lua - Preset registry and UI application flow
 local addonName, addon = ...
 
 addon.Presets = addon.Presets or {}
@@ -152,7 +153,6 @@ local function showExistingLayoutSelector(preset, onSelect, onCancel)
         return
     end
 
-    -- Build list options for the dialog
     local listOptions = {}
     for _, name in ipairs(layouts) do
         table.insert(listOptions, { value = name, label = name })
@@ -252,7 +252,6 @@ function Presets:ApplyPresetFromUI(preset)
         end, nil)
     end
 
-    -- Check if there are existing editable layouts to offer the choice
     local editableLayouts = getEditableLayoutsForPresetTarget()
 
     if #editableLayouts == 0 then
@@ -271,7 +270,6 @@ function Presets:ApplyPresetFromUI(preset)
             promptCreateNew(defaultName)
         end,
         onCancel = function()
-            -- User chose "Apply to Existing" (the Cancel button in this dialog)
             promptApplyToExisting()
         end,
     })
