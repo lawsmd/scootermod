@@ -151,7 +151,8 @@ function CB._applySpellNameColor(spellFS, styleCfg, parentFrame)
 			local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode, styleCfg)
 			local rampText = addon.BuildColorRampString(cachedText, r1, g1, b1, r2, g2, b2)
 			if isTextFill then
-				-- Text-fill: gradient goes to filledText; uniform codes on frame.Text				local els = CB._getProp(parentFrame, "textFillElements")
+				-- Text-fill: gradient goes to filledText; uniform codes on frame.Text
+				local els = CB._getProp(parentFrame, "textFillElements")
 				if els and els.filledText then
 					pcall(els.filledText.SetText, els.filledText, rampText)
 				end

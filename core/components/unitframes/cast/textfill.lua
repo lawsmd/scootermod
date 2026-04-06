@@ -975,7 +975,8 @@ local function syncTextFillText(frame, cfg)
 		local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode_tf, styleCfg_tf)
 		elements.filledText:SetText(addon.BuildColorRampString(rawText, r1, g1, b1, r2, g2, b2))
 		-- Apply matching per-character codes to frame.Text so both strings have identical
-		-- |cff escape code structure, ensuring consistent truncation rendering		local uc = cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5}
+		-- |cff escape code structure, ensuring consistent truncation rendering
+		local uc = cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5}
 		CB._rampApplying = true
 		pcall(spellFS.SetText, spellFS, addon.BuildColorRampString(rawText, uc[1], uc[2], uc[3], uc[1], uc[2], uc[3]))
 		CB._rampApplying = false
