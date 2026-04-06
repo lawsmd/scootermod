@@ -613,6 +613,17 @@ local function SetPowerBarTextureOnlyHidden(ownerFrame, hidden)
 end
 Util.SetPowerBarTextureOnlyHidden = SetPowerBarTextureOnlyHidden
 
+-- Resolve the TempMaxHealthLoss sibling StatusBar from a HealthBar.
+-- TempMaxHealthLoss is a child of HealthBarsContainer (same parent as HealthBar).
+local function resolveTempMaxHealthLoss(healthBar)
+    if not healthBar then return nil end
+    local parent = healthBar:GetParent()
+    if not parent then return nil end
+    if parent.TempMaxHealthLoss then return parent.TempMaxHealthLoss end
+    if parent.PlayerFrameTempMaxHealthLoss then return parent.PlayerFrameTempMaxHealthLoss end
+    return nil
+end
+
 -- Hide/restore the Health Bar fill texture and background while keeping text overlays visible.
 local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
     if not ownerFrame or type(ownerFrame) ~= "table" then
@@ -730,6 +741,27 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
             pcall(ownerFrame.SetStatusBarColor, ownerFrame, r, g, b, 0)
         end
         installBarColorHook(ownerFrame)
+
+        -- Hide the TempMaxHealthLoss sibling (purple max health reduction bar)
+        do
+            local tmhl = resolveTempMaxHealthLoss(ownerFrame)
+            if tmhl then
+                setProp(tmhl, "tempMaxHealthLossHidden", true)
+                local tmhlFill = tmhl.GetStatusBarTexture and tmhl:GetStatusBarTexture()
+                if tmhlFill then
+                    setProp(tmhlFill, "healthBarFillHidden", true)
+                    if tmhlFill.SetAlpha then pcall(tmhlFill.SetAlpha, tmhlFill, 0) end
+                    pcall(tmhlFill.Hide, tmhlFill)
+                    installAlphaHook(tmhlFill, "healthBarFillHidden")
+                end
+                setProp(tmhl, "healthBarColorHidden", true)
+                if tmhl.SetStatusBarColor and tmhl.GetStatusBarColor then
+                    local r, g, b = tmhl:GetStatusBarColor()
+                    pcall(tmhl.SetStatusBarColor, tmhl, r, g, b, 0)
+                end
+                installBarColorHook(tmhl)
+            end
+        end
     else
         -- Restore the StatusBar fill color
         setProp(ownerFrame, "healthBarColorHidden", false)
@@ -755,6 +787,25 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
             if scBG then
                 setProp(scBG, "healthBarScootBGHidden", false)
                 pcall(scBG.Show, scBG)
+            end
+        end
+
+        -- Restore the TempMaxHealthLoss sibling
+        do
+            local tmhl = resolveTempMaxHealthLoss(ownerFrame)
+            if tmhl then
+                setProp(tmhl, "tempMaxHealthLossHidden", false)
+                local tmhlFill = tmhl.GetStatusBarTexture and tmhl:GetStatusBarTexture()
+                if tmhlFill then
+                    setProp(tmhlFill, "healthBarFillHidden", false)
+                    if tmhlFill.SetAlpha then pcall(tmhlFill.SetAlpha, tmhlFill, 1) end
+                    pcall(tmhlFill.Show, tmhlFill)
+                end
+                setProp(tmhl, "healthBarColorHidden", false)
+                if tmhl.SetStatusBarColor and tmhl.GetStatusBarColor then
+                    local r, g, b = tmhl:GetStatusBarColor()
+                    pcall(tmhl.SetStatusBarColor, tmhl, r, g, b, 1)
+                end
             end
         end
     end

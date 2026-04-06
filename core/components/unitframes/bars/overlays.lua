@@ -613,8 +613,11 @@ local function ensureHeightClipContainer(bar, unit, cfg)
     local inset = pixelFloor((barHeight - targetHeight) / 2, bar)
 
     container:ClearAllPoints()
-    container:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, -inset)
-    container:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, inset)
+    -- Anchor to HealthBarsContainer (bar's parent) so the clip region spans
+    -- both HealthBar and TempMaxHealthLoss when temp max health loss is active
+    local clipAnchor = bar:GetParent() or bar
+    container:SetPoint("TOPLEFT", clipAnchor, "TOPLEFT", 0, -inset)
+    container:SetPoint("BOTTOMRIGHT", clipAnchor, "BOTTOMRIGHT", 0, inset)
     container:Show()
 
     -- Create/update background that matches CONTAINER size (not full bar)
@@ -1020,8 +1023,9 @@ local function ensureRectHealthOverlay(unit, bar, cfg)
                     local targetHeight = barHeight * (heightPct / 100)
                     local inset = pixelFloor((barHeight - targetHeight) / 2, self)
                     s.heightClipContainer:ClearAllPoints()
-                    s.heightClipContainer:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -inset)
-                    s.heightClipContainer:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, inset)
+                    local clipAnchor = self:GetParent() or self
+                    s.heightClipContainer:SetPoint("TOPLEFT", clipAnchor, "TOPLEFT", 0, -inset)
+                    s.heightClipContainer:SetPoint("BOTTOMRIGHT", clipAnchor, "BOTTOMRIGHT", 0, inset)
                 end
             end)
         end

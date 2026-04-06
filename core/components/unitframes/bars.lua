@@ -1274,9 +1274,16 @@ do
 									color = {0, 0, 0, 1}
 								end
 							end
-                            -- Determine border anchor target: use clipping container if height reduction active
+                            -- Determine border anchor target: use clipping container if height reduction active,
+                            -- otherwise HealthBarsContainer so the border wraps both HealthBar and TempMaxHealthLoss
                             local st = getState(hb)
-                            local borderAnchorTarget = (st and st.heightClipContainer and st.heightClipActive) and st.heightClipContainer or nil
+                            local hbContainer = resolveHealthContainer(frame, unit)
+                            local borderAnchorTarget
+                            if st and st.heightClipContainer and st.heightClipActive then
+                                borderAnchorTarget = st.heightClipContainer
+                            else
+                                borderAnchorTarget = hbContainer
+                            end
                             local handled = false
                             if addon.BarBorders and addon.BarBorders.ApplyToBarFrame then
 								-- Clear any prior holder/state to avoid stale tinting when toggling
