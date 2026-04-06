@@ -202,6 +202,20 @@ function EssentialCooldowns.Render(panel, scrollContent)
                 maxLabel = "Tall",
             })
 
+            -- Swipe Inset
+            inner:AddSlider({
+                label = "Swipe Inset",
+                description = "Shrinks the cooldown swipe area inward to prevent protrusion outside borders on non-square icons.",
+                min = 0, max = 10, step = 1,
+                get = function() return getSetting("swipeInset") or 0 end,
+                set = function(v)
+                    setSetting("swipeInset", v)
+                    if addon and addon.ApplyStyles then
+                        C_Timer.After(0, function() addon:ApplyStyles() end)
+                    end
+                end,
+            })
+
             inner:Finalize()
         end,
     })

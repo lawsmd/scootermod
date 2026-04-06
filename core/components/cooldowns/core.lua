@@ -1237,26 +1237,27 @@ function Overlays.ApplyIconSize(cdmIcon, opts)
 
     -- Reposition internal elements to match new size
     local padding = 0
+    local swipeInset = tonumber(opts.swipeInset) or 0
 
-    -- Cooldown swipe
+    -- Cooldown swipe (inset to prevent protrusion on non-square icons)
     if cdmIcon.Cooldown then
         pcall(function()
             cdmIcon.Cooldown:ClearAllPoints()
-            cdmIcon.Cooldown:SetPoint("TOPLEFT", cdmIcon, "TOPLEFT", padding, -padding)
-            cdmIcon.Cooldown:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", -padding, padding)
+            cdmIcon.Cooldown:SetPoint("TOPLEFT", cdmIcon, "TOPLEFT", swipeInset, -swipeInset)
+            cdmIcon.Cooldown:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", -swipeInset, swipeInset)
         end)
     end
 
-    -- Cooldown flash
+    -- Cooldown flash (match swipe inset)
     if cdmIcon.CooldownFlash then
         pcall(function()
             cdmIcon.CooldownFlash:ClearAllPoints()
-            cdmIcon.CooldownFlash:SetPoint("TOPLEFT", cdmIcon, "TOPLEFT", padding, -padding)
-            cdmIcon.CooldownFlash:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", -padding, padding)
+            cdmIcon.CooldownFlash:SetPoint("TOPLEFT", cdmIcon, "TOPLEFT", swipeInset, -swipeInset)
+            cdmIcon.CooldownFlash:SetPoint("BOTTOMRIGHT", cdmIcon, "BOTTOMRIGHT", -swipeInset, swipeInset)
         end)
     end
 
-    -- Icon texture itself
+    -- Icon texture itself (full size, no inset)
     pcall(function()
         iconTexture:ClearAllPoints()
         iconTexture:SetPoint("TOPLEFT", cdmIcon, "TOPLEFT", padding, -padding)
@@ -1394,6 +1395,7 @@ function Overlays.ApplyToViewer(viewerFrameName, componentId)
                         width = iconWidth,
                         height = iconHeight,
                         iconZoom = zoom,
+                        swipeInset = tonumber(db.swipeInset) or 0,
                     })
                     zoomedIcons[child] = zoom > 0 or nil
                 elseif sizedIcons[child] then
@@ -1527,6 +1529,7 @@ function Overlays.HookViewer(viewerFrameName, componentId)
                                 width = iconWidth,
                                 height = iconHeight,
                                 iconZoom = zoom,
+                                swipeInset = tonumber(component.db.swipeInset) or 0,
                             })
                         end
                     elseif zoom > 0 then

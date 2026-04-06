@@ -41,6 +41,9 @@ addon:RegisterComponentInitializer(function(self)
             tallWideRatio = { type = "addon", default = 0, ui = {
                 label = "Icon Shape", widget = "slider", min = -67, max = 67, step = 1, section = "Sizing", order = 2
             }},
+            swipeInset = { type = "addon", default = 0, ui = {
+                label = "Swipe Inset", widget = "slider", min = 0, max = 10, step = 1, section = "Sizing", order = 3
+            }},
             iconZoom = { type = "addon", default = 0 },
             squareCooldownSwipe = { type = "addon", default = false },
             hideDecorativeRing = { type = "addon", default = false },
