@@ -1192,6 +1192,10 @@ function PartyFrames.installHooks()
         end)
     end
 
+    -- Weak tables for roleIcon:Show() post-hook (maps roleIcon → frame, tracks hooked icons)
+    local _roleIconToFrame = setmetatable({}, { __mode = "kv" })
+    local _hookedRoleIcons = setmetatable({}, { __mode = "k" })
+
     -- Named function for role icon customization (also used by safety net and fallbacks)
     local function applyCustomRoleIcon(frame)
         if isEditModeActive() then return end
@@ -1212,6 +1216,21 @@ function PartyFrames.installHooks()
 
         local okR, roleIcon = pcall(function() return frame.roleIcon end)
         if not okR or not roleIcon then return end
+
+        -- Install Show hook (once per roleIcon) to re-apply after Blizzard atlas resets.
+        -- Blizzard's CompactUnitFrame_UpdateRoleIcon calls SetAtlas(default) then Show()
+        -- then SetSize(secret) which errors — our post-hook never fires. This Show hook
+        -- fires BEFORE the SetSize error, so our custom atlas is applied reliably.
+        _roleIconToFrame[roleIcon] = frame
+        if not _hookedRoleIcons[roleIcon] then
+            _hookedRoleIcons[roleIcon] = true
+            pcall(function()
+                hooksecurefunc(roleIcon, "Show", function(self)
+                    local f = _roleIconToFrame[self]
+                    if f then pcall(applyCustomRoleIcon, f) end
+                end)
+            end)
+        end
 
         -- Desaturation from DB toggle (applied at the very end)
         local shouldDesaturate = rawget(cfg, "roleIconDesaturate") and true or false
@@ -1250,7 +1269,13 @@ function PartyFrames.installHooks()
                     if okU and u then unit = u end
                     if unit then
                         local okRole, role = pcall(UnitGroupRolesAssigned, unit)
-                        if okRole and type(role) == "string" and role == "DAMAGER" then
+                        local isDamager = false
+                        if okRole and role then
+                            pcall(function()
+                                if type(role) == "string" and role == "DAMAGER" then isDamager = true end
+                            end)
+                        end
+                        if isDamager then
                             pcall(roleIcon.SetAlpha, roleIcon, 0)
                         else
                             pcall(roleIcon.SetAlpha, roleIcon, 1)
@@ -1291,20 +1316,27 @@ function PartyFrames.installHooks()
             if okU and u then unit = u end
 
             if unit then
-                -- Don't override vehicle icons (set flag instead of returning)
+                -- Don't override vehicle icons (pcall wraps boolean test on potentially secret return)
                 local isVehicle = false
-                local okV, inVehicle = pcall(UnitInVehicle, unit)
-                if okV and inVehicle then
-                    local okVUI, hasVUI = pcall(UnitHasVehicleUI, unit)
-                    if okVUI and hasVUI then isVehicle = true end
-                end
+                pcall(function()
+                    if UnitInVehicle(unit) and UnitHasVehicleUI(unit) then
+                        isVehicle = true
+                    end
+                end)
 
                 if not isVehicle then
                     local okRole, role = pcall(UnitGroupRolesAssigned, unit)
-                    if okRole and type(role) == "string" and role ~= "NONE" then
+                    -- Wrap comparison in pcall: role may be a secret value in tainted contexts
+                    local validRole = nil
+                    if okRole and role then
+                        pcall(function()
+                            if type(role) == "string" and role ~= "NONE" then validRole = role end
+                        end)
+                    end
+                    if validRole then
                         local atlases = Utils.ROLE_ICON_ATLASES and Utils.ROLE_ICON_ATLASES[iconSet]
-                        if atlases and atlases[role] then
-                            pcall(roleIcon.SetAtlas, roleIcon, atlases[role])
+                        if atlases and atlases[validRole] then
+                            pcall(roleIcon.SetAtlas, roleIcon, atlases[validRole])
                         end
                     end
                 end
@@ -1352,8 +1384,12 @@ function PartyFrames.installHooks()
             if not gf then return end
             local pCfg = rawget(gf, "party")
             local rCfg = rawget(gf, "raid")
-            local hasAny = (pCfg and (rawget(pCfg, "roleIconSet") or rawget(pCfg, "roleIconAnchor") or rawget(pCfg, "roleIconVisibility")))
-                        or (rCfg and (rawget(rCfg, "roleIconSet") or rawget(rCfg, "roleIconAnchor") or rawget(rCfg, "roleIconVisibility")))
+            local hasAny = (pCfg and (rawget(pCfg, "roleIconSet") or rawget(pCfg, "roleIconAnchor") or rawget(pCfg, "roleIconVisibility")
+                                  or rawget(pCfg, "roleIconDesaturate") or rawget(pCfg, "roleIconScale")
+                                  or rawget(pCfg, "roleIconOffsetX") or rawget(pCfg, "roleIconOffsetY")))
+                        or (rCfg and (rawget(rCfg, "roleIconSet") or rawget(rCfg, "roleIconAnchor") or rawget(rCfg, "roleIconVisibility")
+                                  or rawget(rCfg, "roleIconDesaturate") or rawget(rCfg, "roleIconScale")
+                                  or rawget(rCfg, "roleIconOffsetX") or rawget(rCfg, "roleIconOffsetY")))
             if not hasAny then return end
             if safetyNetTimer then safetyNetTimer:Cancel() end
             safetyNetTimer = C_Timer.NewTimer(0.15, function()
@@ -1376,6 +1412,21 @@ function PartyFrames.installHooks()
                 end
             end)
         end)
+    end
+
+    -- Re-apply role icons after Edit Mode exit transition window (1.0s _exitingEditMode flag).
+    -- During the transition, Blizzard rebuilds frames (resetting atlas to default) but our
+    -- Show hook and safety net are suppressed by isEditModeActive(). This fires after the
+    -- flag clears so custom icons are restored.
+    if not addon._RoleIconEditModeExitInstalled and _G.EventRegistry then
+        addon._RoleIconEditModeExitInstalled = true
+        EventRegistry:RegisterCallback("EditMode.Exit", function()
+            C_Timer.After(1.1, function()
+                if isEditModeActive() then return end
+                if addon.ApplyPartyRoleIcons then addon.ApplyPartyRoleIcons() end
+                if addon.ApplyRaidRoleIcons then addon.ApplyRaidRoleIcons() end
+            end)
+        end, "ScootRoleIconEditModeExit")
     end
 
     --------------------------------------------------------------------------

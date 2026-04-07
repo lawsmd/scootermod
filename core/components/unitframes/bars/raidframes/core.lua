@@ -1202,6 +1202,146 @@ function RaidFrames.installHooks()
             end
         end)
     end
+
+    --------------------------------------------------------------------------
+    -- Event-Driven Refresh + Periodic Integrity Check
+    --------------------------------------------------------------------------
+    -- Addresses timing gaps where Blizzard rebuilds raid frames (group join,
+    -- CVar toggles like "Display Main Tank and Assist") but Scoot's deferred
+    -- hooks haven't fired yet, leaving frames invisible (Blizzard fill hidden
+    -- via alpha 0, overlay not yet created/shown).
+    --
+    -- Two-layer defense (mirrors partyframes/core.lua pattern):
+    --   1. Event-driven: GROUP_ROSTER_UPDATE / PLAYER_ENTERING_WORLD trigger
+    --      a debounced full overlay reapply after 0.5s.
+    --   2. Ticker: Every 5s while in a raid, verify overlay visibility and
+    --      Blizzard fill alpha for every active raid frame.
+    --------------------------------------------------------------------------
+
+    if not addon._RaidFrameIntegrityCheckInstalled then
+        addon._RaidFrameIntegrityCheckInstalled = true
+        local integrityTicker = nil
+        local pendingRefreshTimer = nil
+
+        -- Immediate debounced refresh: calls the brute-force Apply function
+        -- that iterates all 80 possible raid frame names.
+        local function scheduleFullRefresh()
+            if isEditModeActive() then return end
+            if pendingRefreshTimer then
+                pendingRefreshTimer:Cancel()
+                pendingRefreshTimer = nil
+            end
+            pendingRefreshTimer = C_Timer.NewTimer(0.5, function()
+                pendingRefreshTimer = nil
+                if isEditModeActive() then return end
+                if InCombatLockdown and InCombatLockdown() then
+                    Combat.queueRaidFrameReapply()
+                    return
+                end
+                if addon.ApplyRaidFrameHealthOverlays then
+                    addon.ApplyRaidFrameHealthOverlays()
+                end
+                if addon.ApplyRaidFrameHealthBarBorders then
+                    addon.ApplyRaidFrameHealthBarBorders()
+                end
+            end)
+        end
+
+        -- Per-frame integrity check (mirrors partyframes/core.lua pattern)
+        local function runIntegrityCheck()
+            if isEditModeActive() then return end
+            if InCombatLockdown and InCombatLockdown() then return end
+
+            local db = addon and addon.db and addon.db.profile
+            local groupFrames = db and rawget(db, "groupFrames") or nil
+            local cfg = groupFrames and rawget(groupFrames, "raid") or nil
+            if not cfg then return end
+
+            local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default")
+                           or (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+
+            local colorMode = cfg.healthBarColorMode
+            local isValueMode = (colorMode == "value" or colorMode == "valueDark")
+            local useDark = (colorMode == "valueDark")
+
+            local function checkFrame(frame)
+                if not frame then return end
+                local bar = frame.healthBar
+                if bar and hasCustom then
+                    local state = getState(bar)
+                    if state and state.overlayActive then
+                        -- Check 1: Blizzard fill must be hidden
+                        local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+                        if fill then
+                            local okA, alpha = pcall(fill.GetAlpha, fill)
+                            if okA and not (issecretvalue and issecretvalue(alpha))
+                               and type(alpha) == "number" and alpha > 0 then
+                                hideBlizzardFill(bar)
+                            end
+                        end
+                        -- Check 2: Overlay must be visible and anchored
+                        local overlay = state.healthOverlay
+                        if overlay and not overlay:IsShown() then
+                            updateHealthOverlay(bar)
+                        end
+                        -- Check 3: Revalidate overlay color for value-based modes
+                        if isValueMode and overlay and overlay:IsShown() then
+                            local parentFrame = bar.GetParent and bar:GetParent()
+                            local unit
+                            if parentFrame then
+                                local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
+                                if okU and u then unit = u end
+                            end
+                            if unit and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                                addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
+                            end
+                        end
+                    elseif not state or not state.overlayActive then
+                        -- Overlay not yet created — force creation
+                        RaidFrames.ensureHealthOverlay(bar, cfg)
+                    end
+                end
+                -- Check 4: Role icons
+                if addon._applyCustomRoleIcon then
+                    pcall(addon._applyCustomRoleIcon, frame)
+                end
+            end
+
+            -- Combined layout: CompactRaidFrame1..40
+            for i = 1, 40 do
+                checkFrame(_G["CompactRaidFrame" .. i])
+            end
+            -- Group layout: CompactRaidGroup1..8 Member1..5
+            for g = 1, 8 do
+                for m = 1, 5 do
+                    checkFrame(_G["CompactRaidGroup" .. g .. "Member" .. m])
+                end
+            end
+        end
+
+        local integrityEventFrame = CreateFrame("Frame")
+        integrityEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+        integrityEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        integrityEventFrame:SetScript("OnEvent", function()
+            if isEditModeActive() then return end
+            local inRaid = IsInRaid and IsInRaid()
+            if inRaid then
+                scheduleFullRefresh()
+                if not integrityTicker then
+                    integrityTicker = C_Timer.NewTicker(5, runIntegrityCheck)
+                end
+            else
+                if integrityTicker then
+                    integrityTicker:Cancel()
+                    integrityTicker = nil
+                end
+                if pendingRefreshTimer then
+                    pendingRefreshTimer:Cancel()
+                    pendingRefreshTimer = nil
+                end
+            end
+        end)
+    end
 end
 
 -- Install hooks on load
