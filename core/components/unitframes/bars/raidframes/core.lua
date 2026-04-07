@@ -452,12 +452,14 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
         _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self)
             local st = getState(self)
             if st and st.overlayActive then
-                -- Synchronous: hide immediately to prevent 1-frame flash
+                -- Synchronous: hide new fill and re-anchor overlay immediately
                 hideBlizzardFill(self)
+                updateHealthOverlay(self)
                 -- Deferred safety net: catch edge cases where texture isn't ready
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         hideBlizzardFill(self)
+                        updateHealthOverlay(self)
                     end)
                 end
             end
@@ -1051,6 +1053,9 @@ function RaidFrames.installHooks()
                     if hasCustom then
                         local bar = frame.healthBar
                         local cfgRef = cfg
+                        -- Clear fingerprint to force fresh overlay setup on frame reuse
+                        local fpState = getState(bar)
+                        if fpState then fpState.lastAppliedFingerprint = nil end
                         if _G.C_Timer and _G.C_Timer.After then
                             _G.C_Timer.After(0, function()
                                 if InCombatLockdown and InCombatLockdown() then
@@ -1270,30 +1275,38 @@ function RaidFrames.installHooks()
                 if bar and hasCustom then
                     local state = getState(bar)
                     if state and state.overlayActive then
-                        -- Check 1: Blizzard fill must be hidden
-                        local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
-                        if fill then
-                            local okA, alpha = pcall(fill.GetAlpha, fill)
-                            if okA and not (issecretvalue and issecretvalue(alpha))
-                               and type(alpha) == "number" and alpha > 0 then
-                                hideBlizzardFill(bar)
-                            end
-                        end
-                        -- Check 2: Overlay must be visible and anchored
                         local overlay = state.healthOverlay
-                        if overlay and not overlay:IsShown() then
-                            updateHealthOverlay(bar)
-                        end
-                        -- Check 3: Revalidate overlay color for value-based modes
-                        if isValueMode and overlay and overlay:IsShown() then
-                            local parentFrame = bar.GetParent and bar:GetParent()
-                            local unit
-                            if parentFrame then
-                                local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
-                                if okU and u then unit = u end
+                        if not overlay then
+                            -- Overlay flag set but texture missing — force recreation
+                            state.overlayActive = nil
+                            state.lastAppliedFingerprint = nil
+                            RaidFrames.ensureHealthOverlay(bar, cfg)
+                        else
+                            -- Check 1: Blizzard fill must be hidden
+                            local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+                            if fill then
+                                local okA, alpha = pcall(fill.GetAlpha, fill)
+                                if okA and not (issecretvalue and issecretvalue(alpha))
+                                   and type(alpha) == "number" and alpha > 0 then
+                                    hideBlizzardFill(bar)
+                                end
                             end
-                            if unit and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
-                                addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
+                            -- Check 2: Re-anchor overlay to current fill (catches orphaned anchors)
+                            updateHealthOverlay(bar)
+                            if not overlay:IsShown() then
+                                overlay:Show()
+                            end
+                            -- Check 3: Revalidate overlay color for value-based modes
+                            if isValueMode and overlay:IsShown() then
+                                local parentFrame = bar.GetParent and bar:GetParent()
+                                local unit
+                                if parentFrame then
+                                    local okU, u = pcall(function() return parentFrame.displayedUnit or parentFrame.unit end)
+                                    if okU and u then unit = u end
+                                end
+                                if unit and addon.BarsTextures and addon.BarsTextures.applyValueBasedColor then
+                                    addon.BarsTextures.applyValueBasedColor(bar, unit, overlay, useDark)
+                                end
                             end
                         end
                     elseif not state or not state.overlayActive then

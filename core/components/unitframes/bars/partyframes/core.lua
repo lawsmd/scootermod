@@ -459,12 +459,14 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
         _G.hooksecurefunc(bar, "SetStatusBarTexture", function(self)
             local st = getState(self)
             if st and st.overlayActive then
-                -- Synchronous: hide immediately to prevent 1-frame flash
+                -- Synchronous: hide new fill and re-anchor overlay immediately
                 hideBlizzardFill(self)
+                updateHealthOverlay(self)
                 -- Deferred safety net: catch edge cases where texture isn't ready
                 if _G.C_Timer and _G.C_Timer.After then
                     _G.C_Timer.After(0, function()
                         hideBlizzardFill(self)
+                        updateHealthOverlay(self)
                     end)
                 end
             end
