@@ -556,31 +556,30 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
 
                         if isPrivateAnchor then
                             -- Private aura anchor: don't create overlays, hide any stale ones
+                            auraSt._wantNonSquareOverlay = nil
                             if auraSt and auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
                             if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
                         elseif ratio ~= 0 and not borderEnabled then
-                            -- Hide BOTH Blizzard borders — replaced by a properly-sized overlay
-                            setRegionVisible(aura.DebuffBorder, false)
-                            setRegionVisible(aura.TempEnchantBorder, false)
+                            -- Set flag FIRST — hooks check this flag, not overlay:IsShown().
+                            -- Blizzard never calls SetAlpha on DebuffBorder/TempEnchantBorder,
+                            -- so SetAlpha(0) is permanent and reliable (unlike Hide which Show undoes).
+                            auraSt._wantNonSquareOverlay = true
 
-                            -- Install Show hooks on Blizzard border textures (once per button).
-                            -- Catches ALL code paths that re-show borders (e.g. UpdateAuraType
-                            -- calls DebuffBorder:Show() AFTER SetAuraBorderAtlas hook hides it).
+                            -- Make Blizzard borders invisible via alpha (primary mechanism)
+                            if aura.DebuffBorder then pcall(aura.DebuffBorder.SetAlpha, aura.DebuffBorder, 0) end
+                            if aura.TempEnchantBorder then pcall(aura.TempEnchantBorder.SetAlpha, aura.TempEnchantBorder, 0) end
+
+                            -- Install Show hooks (once per button). When Blizzard calls Show()
+                            -- (e.g. UpdateAuraType), re-enforce alpha(0). No Hide() (undone by
+                            -- next Show), no IsShown() check (timing-sensitive).
                             if not auraSt._dbShowHooked and aura.DebuffBorder then
                                 pcall(function()
                                     hooksecurefunc(aura.DebuffBorder, "Show", function(self)
                                         local parent = self:GetParent()
                                         if not parent then return end
                                         local st = auraState[parent]
-                                        if st and st.debuffBorderOverlay then
-                                            local ok, shown = pcall(st.debuffBorderOverlay.IsShown, st.debuffBorderOverlay)
-                                            if ok and shown then
-                                                pcall(self.Hide, self)
-                                                pcall(self.SetAlpha, self, 0)
-                                                if st._overlayBorderW and st._overlayBorderH then
-                                                    pcall(self.SetSize, self, st._overlayBorderW, st._overlayBorderH)
-                                                end
-                                            end
+                                        if st and st._wantNonSquareOverlay then
+                                            pcall(self.SetAlpha, self, 0)
                                         end
                                     end)
                                 end)
@@ -592,23 +591,16 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                                         local parent = self:GetParent()
                                         if not parent then return end
                                         local st = auraState[parent]
-                                        if st and st.tempEnchantBorderOverlay then
-                                            local ok, shown = pcall(st.tempEnchantBorderOverlay.IsShown, st.tempEnchantBorderOverlay)
-                                            if ok and shown then
-                                                pcall(self.Hide, self)
-                                                pcall(self.SetAlpha, self, 0)
-                                                if st._overlayBorderW and st._overlayBorderH then
-                                                    pcall(self.SetSize, self, st._overlayBorderW, st._overlayBorderH)
-                                                end
-                                            end
+                                        if st and st._wantNonSquareOverlay then
+                                            pcall(self.SetAlpha, self, 0)
                                         end
                                     end)
                                 end)
                                 auraSt._tebShowHooked = true
                             end
 
-                            -- Also resize Blizzard borders to match non-square icon shape (defense in depth):
-                            -- even if a C-level callback re-shows them, they'll render at the correct shape
+                            -- Defense in depth: resize Blizzard borders to non-square shape.
+                            -- Even if alpha somehow gets reset to 1, border renders at correct shape.
                             if aura.DebuffBorder and aura.DebuffBorder.SetSize then
                                 pcall(aura.DebuffBorder.SetSize, aura.DebuffBorder, width * (40 / 30), height * (40 / 30))
                             end
@@ -635,7 +627,8 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                                 if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
                             end
                         else
-                            -- Square icons or custom border active: restore Blizzard borders, hide overlays
+                            -- Square icons or custom border active: clear flag, restore borders, hide overlays
+                            auraSt._wantNonSquareOverlay = nil
                             -- Restore Blizzard border sizes to XML defaults (undo non-square resize)
                             if aura.DebuffBorder and aura.DebuffBorder.SetSize then
                                 pcall(aura.DebuffBorder.SetSize, aura.DebuffBorder, 40, 40)
@@ -643,6 +636,9 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                             if aura.TempEnchantBorder and aura.TempEnchantBorder.SetSize then
                                 pcall(aura.TempEnchantBorder.SetSize, aura.TempEnchantBorder, 32, 32)
                             end
+                            -- Restore alpha for Blizzard borders (undo alpha-based hiding)
+                            if aura.DebuffBorder then pcall(aura.DebuffBorder.SetAlpha, aura.DebuffBorder, 1) end
+                            if aura.TempEnchantBorder then pcall(aura.TempEnchantBorder.SetAlpha, aura.TempEnchantBorder, 1) end
                             if not borderEnabled then
                                 -- Restore type-specific borders based on aura type (not blanket force-show)
                                 local okType2, aType2 = pcall(function() return aura.auraType end)
@@ -680,6 +676,91 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
 
                 end -- version check
                 end) -- pcall per-aura
+            end
+        end
+    end
+
+    -- Post-loop safety net for debuff border overlays.
+    -- Runs OUTSIDE the per-aura pcall so it executes even if the main loop aborted
+    -- for specific buttons. Guarantees every debuff button gets alpha enforcement +
+    -- overlay creation when non-square icons are active.
+    if componentId == "debuffs" and ratio ~= 0 and not borderEnabled then
+        for _, collection in ipairs(auraCollections) do
+            for _, aura in ipairs(collection) do
+                pcall(function()
+                    if not aura then return end
+                    -- Skip private aura anchors
+                    local okAnc, isAnc = pcall(function() return aura.isAuraAnchor end)
+                    if okAnc and isAnc and not issecretvalue(isAnc) then return end
+
+                    -- Enforce alpha(0) on Blizzard borders
+                    if aura.DebuffBorder then aura.DebuffBorder:SetAlpha(0) end
+                    if aura.TempEnchantBorder then aura.TempEnchantBorder:SetAlpha(0) end
+
+                    local auraSt = auraState[aura]
+                    if not auraSt then auraSt = getState(aura) end
+                    if not auraSt then return end
+
+                    -- Set flag (may have been missed if main loop pcall aborted)
+                    auraSt._wantNonSquareOverlay = true
+
+                    -- Install Show hooks if not done yet
+                    if not auraSt._dbShowHooked and aura.DebuffBorder then
+                        pcall(function()
+                            hooksecurefunc(aura.DebuffBorder, "Show", function(self)
+                                local parent = self:GetParent()
+                                if not parent then return end
+                                local st = auraState[parent]
+                                if st and st._wantNonSquareOverlay then
+                                    pcall(self.SetAlpha, self, 0)
+                                end
+                            end)
+                        end)
+                        auraSt._dbShowHooked = true
+                    end
+                    if not auraSt._tebShowHooked and aura.TempEnchantBorder then
+                        pcall(function()
+                            hooksecurefunc(aura.TempEnchantBorder, "Show", function(self)
+                                local parent = self:GetParent()
+                                if not parent then return end
+                                local st = auraState[parent]
+                                if st and st._wantNonSquareOverlay then
+                                    pcall(self.SetAlpha, self, 0)
+                                end
+                            end)
+                        end)
+                        auraSt._tebShowHooked = true
+                    end
+
+                    -- Ensure overlay texture exists (may have been missed by main loop)
+                    local isTempEnchant = false
+                    local okType, aType = pcall(function() return aura.auraType end)
+                    if okType and aType and not issecretvalue(aType) and aType == "TempEnchant" then
+                        isTempEnchant = true
+                    end
+
+                    if isTempEnchant then
+                        if not auraSt.tempEnchantBorderOverlay then
+                            ensureOverlayTexture(aura, "tempEnchantBorderOverlay", "OVERLAY", 1)
+                        end
+                        if auraSt.tempEnchantBorderOverlay then
+                            local okS, shown = pcall(auraSt.tempEnchantBorderOverlay.IsShown, auraSt.tempEnchantBorderOverlay)
+                            if okS and not shown then
+                                updateTempEnchantBorderOverlay(aura, auraSt, width, height)
+                            end
+                        end
+                    else
+                        if not auraSt.debuffBorderOverlay then
+                            ensureOverlayTexture(aura, "debuffBorderOverlay", "OVERLAY", 1)
+                        end
+                        if auraSt.debuffBorderOverlay then
+                            local okS, shown = pcall(auraSt.debuffBorderOverlay.IsShown, auraSt.debuffBorderOverlay)
+                            if okS and not shown then
+                                updateDebuffBorderOverlay(aura, auraSt, width, height)
+                            end
+                        end
+                    end
+                end)
             end
         end
     end
@@ -726,19 +807,16 @@ local function ApplyAuraFrameStyling(self)
         addon._DebuffBorderAtlasHookInstalled = true
         if hooksecurefunc and AuraUtil and AuraUtil.SetAuraBorderAtlas then
             hooksecurefunc(AuraUtil, "SetAuraBorderAtlas", function(borderRegion, dispelType, showDispelType)
-                -- CRITICAL path: hide Blizzard border when our overlay is active.
-                -- Separate pcall ensures this always executes even if cache tracking fails.
+                -- CRITICAL path: enforce alpha(0) on Blizzard border when overlay is active.
+                -- Uses _wantNonSquareOverlay flag (set early, no timing dependency).
+                -- SetAlpha(0) is permanent — Blizzard never calls SetAlpha on these textures.
                 pcall(function()
                     if not borderRegion or not borderRegion.GetParent then return end
                     local aura = borderRegion:GetParent()
                     if not aura then return end
                     local auraSt = auraState[aura]
-                    if auraSt and auraSt.debuffBorderOverlay then
-                        borderRegion:Hide()
+                    if auraSt and auraSt._wantNonSquareOverlay then
                         borderRegion:SetAlpha(0)
-                        if auraSt._overlayBorderW and auraSt._overlayBorderH then
-                            borderRegion:SetSize(auraSt._overlayBorderW, auraSt._overlayBorderH)
-                        end
                     end
                 end)
                 -- NON-CRITICAL path: track debuff type and update overlay atlas
