@@ -1325,6 +1325,7 @@ do
 	-- Also hook SetPortraitTexture as a fallback
 	if _G.SetPortraitTexture then
 		_G.hooksecurefunc("SetPortraitTexture", function(texture, unit)
+			if issecretvalue(unit) then return end
 			if unit and (unit == "player" or unit == "target" or unit == "focus" or unit == "pet" or unit == "targettarget") then
 				local unitKey = nil
 				if unit == "player" then unitKey = "Player"
