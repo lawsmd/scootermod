@@ -850,7 +850,13 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 				end
 				local els = getProp(frame, "textFillElements")
 				if els and els.filledText and els.clipFrame:IsShown() then
-					els.filledText:SetText(text or "")
+					-- When gradient mode is active, the gradient SetText hook fires
+					-- immediately after and applies matching escape codes to filledText.
+					-- Setting raw text here creates a brief mismatch that can cause
+					-- kerning differences around thin characters like apostrophes.
+					if not getProp(frame, "textFillGradientActive") then
+						els.filledText:SetText(text or "")
+					end
 				end
 			end)
 		end)
@@ -971,7 +977,10 @@ local function syncTextFillText(frame, cfg)
 	local isEmpoweredTF = elements.empowered and elements.empowered.active
 	local styleCfg_tf = cfg.spellNameText or {}
 	local colorMode_tf = styleCfg_tf.colorMode or "default"
-	if not isEmpoweredTF and (colorMode_tf == "classGradient" or colorMode_tf == "specGradient" or colorMode_tf == "customGradient") and addon.BuildColorRampString then
+	-- Store gradient-active flag for the SetText hook to skip raw text copies
+	local isGradientActive = not isEmpoweredTF and (colorMode_tf == "classGradient" or colorMode_tf == "specGradient" or colorMode_tf == "customGradient")
+	setProp(frame, "textFillGradientActive", isGradientActive or nil)
+	if isGradientActive and addon.BuildColorRampString then
 		local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode_tf, styleCfg_tf)
 		elements.filledText:SetText(addon.BuildColorRampString(rawText, r1, g1, b1, r2, g2, b2))
 		-- Apply matching per-character codes to frame.Text so both strings have identical
@@ -1010,23 +1019,21 @@ local function syncTextFillText(frame, cfg)
 		end
 		elements.effectiveTextHeight = textH
 	end
-	-- Constrain to bar width so both texts truncate identically (prevents clip-frame edge clipping)
+	-- No SetWidth constraint on either text — both render at natural width.
+	-- WoW's truncation engine can produce different centering for per-character
+	-- |cff codes with different color values, causing ~1-2px offset on long names.
+	-- The clip frame handles progressive reveal; overflow beyond bar edges is
+	-- acceptable in the minimalist text-fill aesthetic.
+	-- Clear any previously set width constraint (from prior apply cycles)
+	if elements.filledText.SetWidth then pcall(elements.filledText.SetWidth, elements.filledText, 0) end
+	if spellFS.SetWidth then pcall(spellFS.SetWidth, spellFS, 0) end
+	-- Store text horizontal bounds for spark height calculation
 	local ok_bw, raw_bw = pcall(frame.GetWidth, frame)
 	local bw = (ok_bw and type(raw_bw) == "number" and not (issecretvalue and issecretvalue(raw_bw))) and raw_bw or 0
-	if bw > 0 then
-		elements.filledText:SetWidth(bw)
-		elements.filledText:SetWordWrap(false)
-		-- Match original text width so it truncates at the same point
-		if spellFS.SetWidth then
-			pcall(spellFS.SetWidth, spellFS, bw)
-			if spellFS.SetWordWrap then pcall(spellFS.SetWordWrap, spellFS, false) end
-		end
-	end
-	-- Store text horizontal bounds for spark height calculation
 	local ok_sw, raw_sw = pcall(elements.filledText.GetStringWidth, elements.filledText)
 	local sw = (ok_sw and type(raw_sw) == "number") and raw_sw or 0
 	if sw > 0 then
-		-- Cap to bar width (text is truncated by SetWidth above)
+		-- Cap to bar width since clip frame clips at bar edge anyway
 		if bw > 0 and sw > bw then sw = bw end
 		local cx = (bw > 0 and bw or 0) / 2 + ox
 		elements.textLeftEdge = cx - sw / 2

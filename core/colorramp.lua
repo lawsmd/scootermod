@@ -151,43 +151,30 @@ function addon.BuildColorRampString(text, r1, g1, b1, r2, g2, b2)
 
     -- Single character: just use start color
     if total == 1 then
-        local ch = chars[1]
-        if ch:match("^%s+$") then return ch end
         return string.format("|cff%02x%02x%02x%s|r",
             math.floor(r1 * 255 + 0.5),
             math.floor(g1 * 255 + 0.5),
             math.floor(b1 * 255 + 0.5),
-            ch)
+            chars[1])
     end
 
+    -- All characters (including spaces) participate in gradient and get |cff codes.
+    -- Wrapping every character uniformly ensures identical escape code structure
+    -- between gradient and uniform-color versions, preventing WoW's text shaper
+    -- from producing different glyph positioning at run boundaries.
     local parts = {}
-    local visibleCount = 0
-    -- Count non-whitespace characters for gradient spread
-    for idx = 1, total do
-        if not chars[idx]:match("^%s+$") then
-            visibleCount = visibleCount + 1
-        end
-    end
-
-    local colorIdx = 0
-    local denom = math.max(visibleCount - 1, 1)
+    local denom = math.max(total - 1, 1)
     for idx = 1, total do
         local ch = chars[idx]
-        if ch:match("^%s+$") then
-            -- Whitespace passes through without color codes
-            parts[#parts + 1] = ch
-        else
-            local t = colorIdx / denom
-            local cr = r1 + (r2 - r1) * t
-            local cg = g1 + (g2 - g1) * t
-            local cb = b1 + (b2 - b1) * t
-            parts[#parts + 1] = string.format("|cff%02x%02x%02x%s|r",
-                math.floor(cr * 255 + 0.5),
-                math.floor(cg * 255 + 0.5),
-                math.floor(cb * 255 + 0.5),
-                ch)
-            colorIdx = colorIdx + 1
-        end
+        local t = (idx - 1) / denom
+        local cr = r1 + (r2 - r1) * t
+        local cg = g1 + (g2 - g1) * t
+        local cb = b1 + (b2 - b1) * t
+        parts[#parts + 1] = string.format("|cff%02x%02x%02x%s|r",
+            math.floor(cr * 255 + 0.5),
+            math.floor(cg * 255 + 0.5),
+            math.floor(cb * 255 + 0.5),
+            ch)
     end
 
     return table.concat(parts)
