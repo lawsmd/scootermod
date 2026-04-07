@@ -365,13 +365,6 @@ UF.portraitBorderColorValues = {
 }
 UF.portraitBorderColorOrder = { "texture", "class", "custom" }
 
--- Health bar fill direction options (Target/Focus)
-UF.fillDirectionValues = {
-    default = "Left to Right (Default)",
-    reverse = "Right to Left (Mirrored)",
-}
-UF.fillDirectionOrder = { "default", "reverse" }
-
 -- Font color mode options (cast bar spell name — includes gradient modes)
 UF.fontColorCastBarValues = {
     default = "Default",
@@ -490,7 +483,6 @@ function UF.getHealthBarTabs(componentId)
     if componentId == "ufTarget" or componentId == "ufFocus" then
         return {
             { key = "sizing", label = "Sizing" },
-            { key = "direction", label = "Direction" },
             { key = "style", label = "Style" },
             { key = "border", label = "Border" },
             { key = "visibility", label = "Visibility" },

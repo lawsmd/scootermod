@@ -332,16 +332,6 @@ local function buildHealthVisibilityTab(inner)
     inner:Finalize()
 end
 
-local function buildDirectionTab(inner)
-    inner:AddSelector({
-        label = "Bar Fill Direction",
-        values = UF.fillDirectionValues, order = UF.fillDirectionOrder,
-        get = function() local t = getUFDB() or {}; return t.healthBarReverseFill and "reverse" or "default" end,
-        set = function(v) local t = ensureUFDB(); if t then t.healthBarReverseFill = (v == "reverse"); applyStyles() end end,
-    })
-    inner:Finalize()
-end
-
 --------------------------------------------------------------------------------
 -- Renderer Function
 --------------------------------------------------------------------------------
@@ -402,7 +392,7 @@ function UF.RenderFocus(panel, scrollContent)
     })
 
     --------------------------------------------------------------------------------
-    -- Health Bar (5 tabs with Direction first)
+    -- Health Bar
     --------------------------------------------------------------------------------
 
     local healthTabs = UF.getHealthBarTabs(COMPONENT_ID)
@@ -428,7 +418,6 @@ function UF.RenderFocus(panel, scrollContent)
                         })
                         tabInner:Finalize()
                     end,
-                    direction = function(cf, tabInner) buildDirectionTab(tabInner) end,
                     style = function(cf, tabInner) buildStyleTab(tabInner, "healthBar", applyBarTextures) end,
                     border = function(cf, tabInner) buildBorderTab(tabInner, "healthBar", applyBarTextures) end,
                     visibility = function(cf, tabInner) buildHealthVisibilityTab(tabInner) end,

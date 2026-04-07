@@ -4374,7 +4374,6 @@ Presets:Register({
       healthBarBorderTintEnable = true,
       healthBarColorMode = "valueDark",
       healthBarHideBorder = false,
-      healthBarReverseFill = true,
       healthBarTexture = "a2",
       levelTextHidden = true,
       misc = {

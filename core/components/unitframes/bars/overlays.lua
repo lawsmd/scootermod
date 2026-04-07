@@ -43,6 +43,14 @@ local resolveHealthBar = Resolvers.resolveHealthBar
 local resolveHealthContainer = Resolvers.resolveHealthContainer
 local resolvePowerBar = Resolvers.resolvePowerBar
 
+-- Resolve TempMaxHealthLoss sibling StatusBar from a HealthBar
+local function resolveTempMaxHealthLoss(healthBar)
+    if not healthBar then return nil end
+    local parent = healthBar:GetParent()
+    if not parent then return nil end
+    return parent.TempMaxHealthLoss or parent.PlayerFrameTempMaxHealthLoss or nil
+end
+
 -- Texture functions
 local applyAlpha = Alpha.applyAlpha
 
@@ -837,6 +845,52 @@ local function updateRectHealthOverlay(unit, bar)
 end
 
 --------------------------------------------------------------------------------
+-- TempMaxHealthLoss Rect Overlay
+--------------------------------------------------------------------------------
+
+-- Rectangular overlay for TempMaxHealthLoss (purple bar segment showing temporary max
+-- health reduction). Fills the portrait chip the same way ensureRectHealthOverlay does
+-- for the main health bar fill.
+local function updateRectTmhlOverlay(unit, healthBar)
+    local st = getState(healthBar)
+    if not st then return end
+    local overlay = st.tmhlRectFill
+    if not overlay then return end
+
+    if not st.rectActive then
+        overlay:Hide()
+        return
+    end
+
+    local tmhl = resolveTempMaxHealthLoss(healthBar)
+    if not tmhl then
+        overlay:Hide()
+        return
+    end
+
+    local tmhlVisible = tmhl.IsShown and tmhl:IsShown()
+    if not tmhlVisible then
+        overlay:Hide()
+        return
+    end
+
+    local okTex, tmhlTex = pcall(tmhl.GetStatusBarTexture, tmhl)
+    if not okTex or not tmhlTex then
+        overlay:Hide()
+        return
+    end
+
+    overlay:ClearAllPoints()
+    overlay:SetAllPoints(tmhlTex)
+    overlay:Show()
+
+    -- Hide Blizzard's native TempMaxHealthLoss fill texture
+    if tmhlTex and tmhlTex.SetAlpha then
+        pcall(tmhlTex.SetAlpha, tmhlTex, 0)
+    end
+end
+
+--------------------------------------------------------------------------------
 -- Power Rect Overlay
 --------------------------------------------------------------------------------
 
@@ -906,23 +960,16 @@ local function ensureRectHealthOverlay(unit, bar, cfg)
         local portraitCfg = rawget(ufCfg, "portrait")
         local portraitHidden = (portraitCfg and portraitCfg.hidePortrait == true) or false
         shouldActivate = portraitHidden or needsOverlayForStyling
-        if cfg and cfg.healthBarReverseFill ~= nil then
-            st.rectReverseFill = not not cfg.healthBarReverseFill
-        end
     elseif unit == "Player" then
         shouldActivate = (ufCfg.useCustomBorders == true) or needsOverlayForStyling
-        st.rectReverseFill = false -- Player health bar always fills left-to-right
     elseif unit == "TargetOfTarget" then
         shouldActivate = (ufCfg.useCustomBorders == true) or needsOverlayForStyling
-        st.rectReverseFill = false -- ToT health bar always fills left-to-right
     elseif unit == "FocusTarget" then
         shouldActivate = (ufCfg.useCustomBorders == true) or needsOverlayForStyling
-        st.rectReverseFill = false -- FoT health bar always fills left-to-right
     elseif type(unit) == "string" and string.lower(unit) == "pet" then
         -- PetFrame has a small top-right "chip" when Blizzard's border textures are hidden
         -- and replace them with a custom border. Use the same overlay pattern as Player/ToT.
         shouldActivate = (ufCfg.useCustomBorders == true) or needsOverlayForStyling
-        st.rectReverseFill = false -- Pet health bar always fills left-to-right
     else
         -- Others: skip
         if st.rectFill then
@@ -942,6 +989,17 @@ local function ensureRectHealthOverlay(unit, bar, cfg)
     if not shouldActivate then
         if st.rectFill then
             st.rectFill:Hide()
+        end
+        if st.tmhlRectFill then
+            st.tmhlRectFill:Hide()
+            -- Restore TempMaxHealthLoss native texture visibility
+            local tmhl = resolveTempMaxHealthLoss(bar)
+            if tmhl then
+                local okT, tmhlTex = pcall(tmhl.GetStatusBarTexture, tmhl)
+                if okT and tmhlTex and tmhlTex.SetAlpha then
+                    pcall(tmhlTex.SetAlpha, tmhlTex, 1)
+                end
+            end
         end
         if st.heightClipContainer then
             st.heightClipContainer:Hide()
@@ -1200,6 +1258,163 @@ local function ensureRectHealthOverlay(unit, bar, cfg)
     end
 
     updateRectHealthOverlay(unit, bar)
+
+    ---------------------------------------------------------------------------
+    -- TempMaxHealthLoss rectangular overlay (Target/Focus/Player)
+    -- Fills the portrait chip on TempMaxHealthLoss the same way the health bar
+    -- overlay fills the portrait chip on the main health fill.
+    ---------------------------------------------------------------------------
+    if shouldActivate then
+        local tmhl = resolveTempMaxHealthLoss(bar)
+        if tmhl then
+            -- Create overlay texture once
+            if not st.tmhlRectFill then
+                local tmhlOverlay = tmhl:CreateTexture(nil, "OVERLAY", nil, 2)
+                tmhlOverlay:SetVertTile(false)
+                tmhlOverlay:SetHorizTile(false)
+                tmhlOverlay:SetTexCoord(0, 1, 0, 1)
+                st.tmhlRectFill = tmhlOverlay
+            end
+
+            local tmhlOverlay = st.tmhlRectFill
+
+            -- Apply the same custom texture as the health bar overlay for visual consistency
+            local tmhlTexKey = cfg.healthBarTexture or "default"
+            local tmhlResolvedPath = addon.Media and addon.Media.ResolveBarTexturePath
+                and addon.Media.ResolveBarTexturePath(tmhlTexKey)
+            if tmhlResolvedPath then
+                tmhlOverlay:SetTexture(tmhlResolvedPath)
+            else
+                -- Copy texture from TempMaxHealthLoss's own StatusBarTexture
+                local okT, tmhlTex = pcall(tmhl.GetStatusBarTexture, tmhl)
+                local applied = false
+                if okT and tmhlTex then
+                    local okAtlas, atlasName = pcall(tmhlTex.GetAtlas, tmhlTex)
+                    if okAtlas and atlasName and atlasName ~= "" then
+                        pcall(tmhlOverlay.SetAtlas, tmhlOverlay, atlasName, true)
+                        applied = true
+                    end
+                    if not applied then
+                        local okP, pathOrTex = pcall(tmhlTex.GetTexture, tmhlTex)
+                        if okP then
+                            if type(pathOrTex) == "string" and pathOrTex ~= "" then
+                                local isAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo
+                                    and _G.C_Texture.GetAtlasInfo(pathOrTex) ~= nil
+                                if isAtlas then
+                                    pcall(tmhlOverlay.SetAtlas, tmhlOverlay, pathOrTex, true)
+                                else
+                                    tmhlOverlay:SetTexture(pathOrTex)
+                                end
+                                applied = true
+                            elseif type(pathOrTex) == "number" and pathOrTex > 0 then
+                                tmhlOverlay:SetTexture(pathOrTex)
+                                applied = true
+                            end
+                        end
+                    end
+                end
+                if not applied then
+                    tmhlOverlay:SetColorTexture(0.4, 0, 0.4, 1) -- fallback purple
+                end
+            end
+
+            -- Apply TempMaxHealthLoss's own color (NOT health bar color)
+            if tmhl.GetStatusBarColor then
+                local okC, tr, tg, tb, ta = pcall(tmhl.GetStatusBarColor, tmhl)
+                if okC and tr then
+                    tmhlOverlay:SetVertexColor(tr, tg, tb, ta or 1)
+                end
+            end
+
+            -- Install hooks on TempMaxHealthLoss (once per bar)
+            if not st.tmhlHooksInstalled then
+                st.tmhlHooksInstalled = true
+
+                if tmhl.SetValue then
+                    pcall(function()
+                        _G.hooksecurefunc(tmhl, "SetValue", function()
+                            if isEditModeActive() then return end
+                            updateRectTmhlOverlay(unit, bar)
+                        end)
+                    end)
+                end
+
+                if tmhl.SetMinMaxValues then
+                    pcall(function()
+                        _G.hooksecurefunc(tmhl, "SetMinMaxValues", function()
+                            if isEditModeActive() then return end
+                            updateRectTmhlOverlay(unit, bar)
+                        end)
+                    end)
+                end
+
+                if tmhl.HookScript then
+                    pcall(function()
+                        tmhl:HookScript("OnShow", function()
+                            if isEditModeActive() then return end
+                            updateRectTmhlOverlay(unit, bar)
+                        end)
+                        tmhl:HookScript("OnHide", function()
+                            if isEditModeActive() then return end
+                            local s = getState(bar)
+                            if s and s.tmhlRectFill then
+                                s.tmhlRectFill:Hide()
+                            end
+                        end)
+                        tmhl:HookScript("OnSizeChanged", function()
+                            if isEditModeActive() then return end
+                            updateRectTmhlOverlay(unit, bar)
+                        end)
+                    end)
+                end
+
+                -- Re-sync color when Blizzard changes it
+                if tmhl.SetStatusBarColor then
+                    pcall(function()
+                        _G.hooksecurefunc(tmhl, "SetStatusBarColor", function(self)
+                            if isEditModeActive() then return end
+                            local s = getState(bar)
+                            if s and s.tmhlRectFill and s.rectActive then
+                                local okC, cr, cg, cb, ca = pcall(self.GetStatusBarColor, self)
+                                if okC and cr then
+                                    s.tmhlRectFill:SetVertexColor(cr, cg, cb, ca or 1)
+                                end
+                            end
+                        end)
+                    end)
+                end
+
+                -- Re-hide native texture if Blizzard swaps it
+                if tmhl.SetStatusBarTexture then
+                    pcall(function()
+                        _G.hooksecurefunc(tmhl, "SetStatusBarTexture", function(self)
+                            if isEditModeActive() then return end
+                            local s = getState(bar)
+                            if not (s and s.rectActive and s.tmhlRectFill) then return end
+                            local newTex = self:GetStatusBarTexture()
+                            if newTex and newTex.SetAlpha then
+                                pcall(newTex.SetAlpha, newTex, 0)
+                            end
+                            updateRectTmhlOverlay(unit, bar)
+                        end)
+                    end)
+                end
+            end
+
+            -- Initial update
+            updateRectTmhlOverlay(unit, bar)
+        end
+    elseif st.tmhlRectFill then
+        -- Overlay deactivated: hide and restore native texture
+        st.tmhlRectFill:Hide()
+        local tmhl = resolveTempMaxHealthLoss(bar)
+        if tmhl then
+            local okT, tmhlTex = pcall(tmhl.GetStatusBarTexture, tmhl)
+            if okT and tmhlTex and tmhlTex.SetAlpha then
+                pcall(tmhlTex.SetAlpha, tmhlTex, 1)
+            end
+        end
+    end
 end
 BO._ensureRectHealthOverlay = ensureRectHealthOverlay
 

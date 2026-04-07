@@ -69,6 +69,29 @@ function addon:OnInitialize()
         end
     end
 
+    -- Migration V4: Remove healthBarReverseFill/powerBarReverseFill (conflicts with TempMaxHealthLoss)
+    do
+        local sv = _G["ScootDB"]
+        if sv and sv.profiles and not (sv.global and sv.global._reverseFillRemovedV4) then
+            for _, profileData in pairs(sv.profiles) do
+                if type(profileData) == "table" then
+                    local uf = type(profileData.unitFrames) == "table" and profileData.unitFrames or nil
+                    if uf then
+                        for _, unitKey in ipairs({ "Target", "Focus" }) do
+                            local unitCfg = type(uf[unitKey]) == "table" and uf[unitKey] or nil
+                            if unitCfg then
+                                unitCfg.healthBarReverseFill = nil
+                                unitCfg.powerBarReverseFill = nil
+                            end
+                        end
+                    end
+                end
+            end
+            if not sv.global then sv.global = {} end
+            sv.global._reverseFillRemovedV4 = true
+        end
+    end
+
     -- 1. Create the database first so moduleEnabled is available for component gating.
     --    GetDefaults() does not reference self.Components — safe to call before init.
     self.db = LibStub("AceDB-3.0"):New("ScootDB", self:GetDefaults(), true)

@@ -4446,7 +4446,6 @@ Presets:Register({
       healthBarHideHealPrediction = true,
       healthBarHideOverAbsorbGlow = true,
       healthBarOverlayHeightPct = 65,
-      healthBarReverseFill = true,
       healthBarTexture = "a2",
       levelTextHidden = true,
       misc = {

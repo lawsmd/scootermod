@@ -174,7 +174,7 @@ do
                 "powerBarBackgroundTexture", "powerBarBackgroundColorMode", "powerBarBackgroundTint", "powerBarBackgroundOpacity",
                 "powerBarHidden",
                 "borderStyle", "borderThickness", "borderInset", "borderInsetH", "borderInsetV", "borderTintEnable", "borderTintColor",
-                "healthBarReverseFill", "healthBarHideTextureOnly",
+                "healthBarHideTextureOnly",
             })
         local altCfg = rawget(cfg, "altPowerBar")
         if not hasAnyBarSetting and not hasAnyKey(altCfg, { "enabled", "width", "height", "x", "y", "fontFace", "size", "style", "color", "alignment" }) then
@@ -1212,12 +1212,6 @@ do
 			end
 			ensureMaskOnBarTexture(hb, resolveHealthMask(unit))
             
-            -- Apply reverse fill for Target/Focus if configured
-            if (unit == "Target" or unit == "Focus") and hb and hb.SetReverseFill then
-                local shouldReverse = not not cfg.healthBarReverseFill
-                pcall(hb.SetReverseFill, hb, shouldReverse)
-            end
-            
             -- Hide/Show Over Absorb Glow (Player/Target/Focus)
             if (unit == "Player" or unit == "Target" or unit == "Focus") and hb and Util and Util.SetOverAbsorbGlowHidden then
                 Util.SetOverAbsorbGlowHidden(hb, cfg.healthBarHideOverAbsorbGlow == true)
@@ -1763,12 +1757,6 @@ do
             -- Hide mana cost prediction overlay (shows predicted power cost of current spell)
             if unit == "Player" and Util and Util.SetManaCostPredictionHidden then
                 Util.SetManaCostPredictionHidden(pb, cfg.powerBarHideManaCostPrediction == true or hideAllVisuals)
-            end
-
-            -- Apply reverse fill for Target/Focus if configured
-            if (unit == "Target" or unit == "Focus") and pb and pb.SetReverseFill then
-                local shouldReverse = not not cfg.powerBarReverseFill
-                pcall(pb.SetReverseFill, pb, shouldReverse)
             end
 
             -- Lightweight persistence hooks for Player Power Bar:
@@ -2424,18 +2412,10 @@ do
                 end
             end
 
-            -- Experimental: Power Bar Width scaling (texture/mask only)
-            -- For Target/Focus: Only when reverse fill is enabled
-            -- For Player: Always available
-            -- Pet excluded - even pcall-wrapped GetWidth on PetFrame's power bar
-            -- can trigger Blizzard internal updates that error on "secret values".
+            -- Power Bar Width scaling (texture/mask only)
+            -- Player only - Pet excluded (secret values), Target/Focus not supported.
             do
-                local canScale = false
-                if unit == "Player" then
-                    canScale = true
-                elseif (unit == "Target" or unit == "Focus") and cfg.powerBarReverseFill then
-                    canScale = true
-                end
+                local canScale = (unit == "Player")
 
                 local pbState = getState(pb)
                 if not pbState then return end
@@ -2575,20 +2555,12 @@ do
 						end
 			
 			-- Power Bar Height scaling (texture/mask only)
-			-- For Target/Focus: Only when reverse fill is enabled
-			-- For Player: Always available
-			-- Pet excluded - even pcall-wrapped GetHeight on PetFrame's power bar
-			-- can trigger Blizzard internal updates that error on "secret values".
+			-- Player only - Pet excluded (secret values), Target/Focus not supported.
 			do
                 -- Skip all Power Bar height scaling while in combat; defer to the next
                 -- out-of-combat styling pass instead to avoid taint.
                 if not inCombat then
-				    local canScale = false
-				    if unit == "Player" then
-					    canScale = true
-				    elseif (unit == "Target" or unit == "Focus") and cfg.powerBarReverseFill then
-					    canScale = true
-				    end
+				    local canScale = (unit == "Player")
 				
 				    local pbState = getState(pb)
 				    if not pbState then return end
@@ -3141,14 +3113,14 @@ do
         "useCustomBorders",
         "healthBarTexture", "healthBarColorMode", "healthBarTint",
         "healthBarBackgroundTexture", "healthBarBackgroundColorMode", "healthBarBackgroundTint", "healthBarBackgroundOpacity",
-        "healthBarReverseFill", "healthBarHideBorder", "healthBarHideTextureOnly",
+        "healthBarHideBorder", "healthBarHideTextureOnly",
         "healthBarHideOverAbsorbGlow", "healthBarHideHealPrediction", "healthBarHideHealthLossAnimation",
         "healthBarBorderStyle", "healthBarBorderTintEnable", "healthBarBorderTintColor",
         "healthBarBorderThickness", "healthBarBorderInset", "healthBarBorderInsetH", "healthBarBorderInsetV",
         -- power bar
         "powerBarTexture", "powerBarColorMode", "powerBarTint",
         "powerBarBackgroundTexture", "powerBarBackgroundColorMode", "powerBarBackgroundTint", "powerBarBackgroundOpacity",
-        "powerBarHidden", "powerBarHideTextureOnly", "powerBarReverseFill",
+        "powerBarHidden", "powerBarHideTextureOnly",
         "powerBarHideFullSpikes", "powerBarHideFeedback", "powerBarHideSpark", "powerBarHideManaCostPrediction",
         "powerBarBorderStyle", "powerBarBorderTintEnable", "powerBarBorderTintColor",
         "powerBarBorderThickness", "powerBarBorderInset", "powerBarBorderInsetH", "powerBarBorderInsetV",
