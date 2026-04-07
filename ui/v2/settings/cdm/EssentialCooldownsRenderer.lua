@@ -276,6 +276,166 @@ function EssentialCooldowns.Render(panel, scrollContent)
         sectionKey = "animations",
         defaultExpanded = false,
         buildContent = function(contentFrame, inner)
+            -- Preview animation state (shared between preview row and tab controls)
+            local PREVIEW_SIZE = 42
+            local PREVIEW_ROW_HEIGHT = 72
+            local startCtrl, previewTicker
+            local animsRunning = false
+            local iconFrame  -- set below in preview row creation
+
+            local PROC_START_PREVIEW_ANIM_IDS = {
+                flashPulse = "procStartFlashPulse",
+                scaleBurst = "procStartScaleBurst",
+                ringExpand = "procStartRingExpand",
+                crossFlare = "procStartCrossFlare",
+                diamondBurst = "procStartDiamondBurst",
+                starburst = "procStartStarburst",
+                pixelScatter = "procStartPixelScatter",
+                spinFade = "procStartSpinFade",
+                cornerBrackets = "procStartCornerBrackets",
+                doubleRing = "procStartDoubleRing",
+            }
+
+            local function startAnimations()
+                if animsRunning or not iconFrame then return end
+                animsRunning = true
+
+                -- Proc loop preview
+                local procLoopStyle = getSetting("procLoopStyle") or "default"
+                if procLoopStyle ~= "default" and addon.PixelGlow then
+                    addon.PixelGlow.StartForIcon(iconFrame, {
+                        style = (procLoopStyle == "pixelDots") and "dots" or "dashes",
+                        colorMode = getSetting("procLoopColor") or "custom",
+                        customColor = getSetting("procLoopCustomColor") or {1, 0.84, 0, 1},
+                        speed = getSetting("procLoopSpeed") or 25,
+                        iconW = PREVIEW_SIZE, iconH = PREVIEW_SIZE,
+                        insetH = 0, insetV = 0,
+                    })
+                end
+
+                -- Proc start preview
+                local procStartStyle = getSetting("procStartStyle") or "default"
+                local animId = PROC_START_PREVIEW_ANIM_IDS[procStartStyle]
+                if animId and addon.ProcStart then
+                    startCtrl = addon.ProcStart.CreatePreviewController(animId, iconFrame)
+                    if startCtrl then
+                        startCtrl:SetSize(PREVIEW_SIZE, PREVIEW_SIZE)
+                        startCtrl:SetPoint("CENTER", iconFrame, "CENTER", 0, 0)
+                        startCtrl:SetFrameLevel(iconFrame:GetFrameLevel() + 10)
+
+                        -- Apply particle scale
+                        local pScale = getSetting("procStartScale") or 1
+                        local meta = addon.ProcStart.ANIM_META and addon.ProcStart.ANIM_META[animId]
+                        if pScale > 1 and meta and meta.supportsScale then
+                            local textures = startCtrl:GetTextures()
+                            if textures then
+                                for _, tex in ipairs(textures) do
+                                    local w, h = tex:GetSize()
+                                    if w and w > 0 and h and h > 0 then
+                                        tex:SetSize(w * pScale, h * pScale)
+                                    end
+                                end
+                            end
+                        end
+
+                        -- Apply color
+                        local colorMode = getSetting("procStartColor") or "custom"
+                        local customColor = getSetting("procStartCustomColor") or {1, 1, 1, 1}
+                        local textures = startCtrl:GetTextures()
+                        if textures then
+                            local cr, cg, cb, ca = 1, 1, 1, 1
+                            if colorMode == "class" then
+                                local _, classToken = UnitClass("player")
+                                if classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken] then
+                                    local cc = RAID_CLASS_COLORS[classToken]
+                                    cr, cg, cb = cc.r, cc.g, cc.b
+                                end
+                            elseif colorMode == "custom" and customColor then
+                                cr, cg, cb, ca = customColor[1] or 1, customColor[2] or 1, customColor[3] or 1, customColor[4] or 1
+                            end
+                            for _, tex in ipairs(textures) do
+                                tex:SetVertexColor(cr, cg, cb, ca)
+                            end
+                        end
+
+                        startCtrl:Play()
+                        previewTicker = C_Timer.NewTicker(3, function()
+                            if startCtrl and iconFrame and iconFrame:IsShown() then
+                                startCtrl:Play()
+                            end
+                        end)
+                    end
+                end
+            end
+
+            local function stopAnimations()
+                if not animsRunning then return end
+                animsRunning = false
+                if previewTicker then previewTicker:Cancel(); previewTicker = nil end
+                if startCtrl then startCtrl:Destroy(); startCtrl = nil end
+                if iconFrame and addon.PixelGlow then
+                    addon.PixelGlow.ReleaseForIcon(iconFrame)
+                end
+            end
+
+            local function restartAnimations()
+                stopAnimations()
+                if contentFrame:IsShown() then
+                    startAnimations()
+                end
+            end
+
+            -- Preview row
+            do
+                local theme = addon.UI.Theme
+                local row = CreateFrame("Frame", nil, contentFrame)
+                row:SetHeight(PREVIEW_ROW_HEIGHT)
+
+                local labelFS = row:CreateFontString(nil, "OVERLAY")
+                labelFS:SetFont(theme:GetFont("LABEL"), 13, "")
+                labelFS:SetPoint("LEFT", row, "LEFT", 12, 0)
+                labelFS:SetText("Preview:")
+                local ar, ag, ab = theme:GetAccentColor()
+                labelFS:SetTextColor(ar, ag, ab, 1)
+
+                iconFrame = CreateFrame("Frame", nil, row)
+                iconFrame:SetSize(PREVIEW_SIZE, PREVIEW_SIZE)
+                iconFrame:SetPoint("CENTER", row, "CENTER", 0, 0)
+
+                local specIndex = GetSpecialization and GetSpecialization()
+                local iconTexture = 134400
+                if specIndex then
+                    local _, _, _, specIcon = GetSpecializationInfo(specIndex)
+                    if specIcon then iconTexture = specIcon end
+                end
+                local iconTex = iconFrame:CreateTexture(nil, "ARTWORK")
+                iconTex:SetAllPoints()
+                iconTex:SetTexture(iconTexture)
+                iconTex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+                local iconBg = iconFrame:CreateTexture(nil, "BACKGROUND")
+                iconBg:SetAllPoints()
+                iconBg:SetColorTexture(0, 0, 0, 0.6)
+
+                local bottomBorder = row:CreateTexture(nil, "BORDER", nil, -1)
+                bottomBorder:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+                bottomBorder:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+                bottomBorder:SetHeight(1)
+                bottomBorder:SetColorTexture(ar, ag, ab, 0.2)
+
+                contentFrame:HookScript("OnShow", function() startAnimations() end)
+                contentFrame:HookScript("OnHide", function() stopAnimations() end)
+                if contentFrame:IsShown() then
+                    startAnimations()
+                end
+
+                row.Cleanup = function(self) stopAnimations() end
+                row:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 8, inner._currentY)
+                row:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", -8, inner._currentY)
+                table.insert(inner._controls, row)
+                inner._currentY = inner._currentY - PREVIEW_ROW_HEIGHT
+            end
+
             inner:AddTabbedSection({
                 tabs = {
                     { key = "procStart", label = "Proc Start" },
@@ -286,20 +446,76 @@ function EssentialCooldowns.Render(panel, scrollContent)
                 sectionKey = "animationTabs",
                 buildContent = {
                     procStart = function(tabContent, tabBuilder)
-                        tabBuilder:AddToggle({
-                            key = "hideProcStart",
-                            label = "Hide Proc Start Animation",
-                            get = function() return getSetting("hideProcStart") or false end,
+                        tabBuilder:AddSelector({
+                            label = "Proc Start Style",
+                            values = {
+                                default = "Default (Blizzard)",
+                                none = "None",
+                                flashPulse = "Flash Pulse",
+                                scaleBurst = "Scale Burst",
+                                ringExpand = "Ring Expand",
+                                crossFlare = "Cross Flare",
+                                diamondBurst = "Diamond Burst",
+                                starburst = "Starburst",
+                                pixelScatter = "Pixel Scatter",
+                                spinFade = "Spin Fade",
+                                cornerBrackets = "Corner Brackets",
+                                doubleRing = "Double Ring",
+                            },
+                            order = { "default", "none", "flashPulse", "scaleBurst", "ringExpand", "crossFlare", "diamondBurst", "starburst", "pixelScatter", "spinFade", "cornerBrackets", "doubleRing" },
+                            get = function() return getSetting("procStartStyle") or "default" end,
                             set = function(v)
-                                setSetting("hideProcStart", v)
-                                if addon and addon.ApplyStyles then
-                                    C_Timer.After(0, function() addon:ApplyStyles() end)
-                                end
+                                setSetting("procStartStyle", v)
+                                restartAnimations()
                             end,
                             infoIcon = {
-                                tooltipTitle = "Proc Start Animation",
-                                tooltipText = "The proc start 'splash' is a brief burst that plays when a spell procs. On non-square icons it may appear as a mismatched square. Hiding it still shows the proc loop border glow that follows.",
+                                tooltipTitle = "Proc Start Style",
+                                tooltipText = "The proc start is a brief burst animation (~0.5s) that plays when a spell procs, before the continuous proc loop glow begins. Code-only animations use no custom textures.",
                             },
+                        })
+                        tabBuilder:AddSelectorColorPicker({
+                            label = "Start Color",
+                            values = {
+                                custom = "Custom",
+                                class = "Class Color",
+                            },
+                            order = { "custom", "class" },
+                            get = function() return getSetting("procStartColor") or "custom" end,
+                            set = function(v)
+                                setSetting("procStartColor", v)
+                                restartAnimations()
+                            end,
+                            getColor = function()
+                                local c = getSetting("procStartCustomColor") or {1, 1, 1, 1}
+                                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                            end,
+                            setColor = function(r, g, b, a)
+                                setSetting("procStartCustomColor", {r, g, b, a})
+                                restartAnimations()
+                            end,
+                            customValue = "custom",
+                            hasAlpha = false,
+                            disabled = function()
+                                local s = getSetting("procStartStyle") or "default"
+                                return s == "default" or s == "none"
+                            end,
+                        })
+                        tabBuilder:AddSlider({
+                            label = "Particle Scale",
+                            min = 1.0, max = 3.0, step = 0.25,
+                            precision = 2,
+                            displaySuffix = "x",
+                            get = function() return getSetting("procStartScale") or 1 end,
+                            set = function(v)
+                                setSetting("procStartScale", v)
+                                restartAnimations()
+                            end,
+                            minLabel = "1x",
+                            maxLabel = "3x",
+                            disabled = function()
+                                local s = getSetting("procStartStyle") or "default"
+                                return s == "default" or s == "none"
+                            end,
                         })
                         tabBuilder:Finalize()
                     end,

@@ -47,9 +47,11 @@ addon:RegisterComponentInitializer(function(self)
             iconZoom = { type = "addon", default = 0 },
             squareCooldownSwipe = { type = "addon", default = false },
             hideDecorativeRing = { type = "addon", default = false },
-            hideProcStart = { type = "addon", default = false, ui = {
-                label = "Hide Proc Start Animation", widget = "checkbox", section = "Animations", order = 1
-            }},
+            hideProcStart = { type = "addon", default = false },
+            procStartStyle = { type = "addon", default = "default" },
+            procStartColor = { type = "addon", default = "custom" },
+            procStartCustomColor = { type = "addon", default = {1, 1, 1, 1} },
+            procStartScale = { type = "addon", default = 1 },
             procLoopStyle = { type = "addon", default = "default" },
             procLoopColor = { type = "addon", default = "custom" },
             procLoopCustomColor = { type = "addon", default = {1, 0.84, 0, 1} },

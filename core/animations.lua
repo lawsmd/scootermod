@@ -44,13 +44,17 @@ function ControllerMixin:Play()
 	if self._frame then
 		self._frame:Show()
 	end
-	if self._animGroup then
+	if self._multiCtrl then
+		self._multiCtrl:Play()
+	elseif self._animGroup then
 		self._animGroup:Play()
 	end
 end
 
 function ControllerMixin:Stop()
-	if self._animGroup then
+	if self._multiCtrl then
+		self._multiCtrl:Stop()
+	elseif self._animGroup then
 		self._animGroup:Stop()
 	end
 	if self._frame then
@@ -59,6 +63,9 @@ function ControllerMixin:Stop()
 end
 
 function ControllerMixin:IsPlaying()
+	if self._multiCtrl then
+		return self._multiCtrl:IsPlaying()
+	end
 	if self._animGroup then
 		return self._animGroup:IsPlaying()
 	end
@@ -106,6 +113,9 @@ function ControllerMixin:Hide()
 end
 
 function ControllerMixin:Destroy()
+	if self._multiCtrl and self._multiCtrl.Stop then
+		self._multiCtrl:Stop()
+	end
 	if self._animGroup then
 		self._animGroup:Stop()
 	end
@@ -116,6 +126,7 @@ function ControllerMixin:Destroy()
 	self._frame = nil
 	self._texture = nil
 	self._animGroup = nil
+	self._multiCtrl = nil
 end
 
 function ControllerMixin:GetFrame()
@@ -128,6 +139,16 @@ end
 
 function ControllerMixin:GetAnimGroup()
 	return self._animGroup
+end
+
+function ControllerMixin:GetTextures()
+	if self._multiCtrl and self._multiCtrl._textures then
+		return self._multiCtrl._textures
+	end
+	if self._texture then
+		return { self._texture }
+	end
+	return nil
 end
 
 --------------------------------------------------------------------------------
@@ -161,11 +182,30 @@ function Anim.Create(animId, parent, existingTexture)
 		tex = frame:CreateTexture(nil, "OVERLAY")
 		tex:SetTexture(def.texture)
 		tex:SetAllPoints(frame)
+	elseif not tex and not def.texture and def.buildAnimGroup then
+		-- buildAnimGroup needs a texture even if the definition doesn't specify one
+		-- (the callback will set the texture/atlas itself)
+		tex = frame:CreateTexture(nil, "OVERLAY")
+		tex:SetAllPoints(frame)
 	end
 	ctrl._texture = tex
 
 	-- Build animation group via the definition's callback
-	if def.buildAnimGroup and tex then
+	if def.buildController then
+		-- Multi-texture path: buildController creates its own textures + animGroups
+		local multiCtrl = def.buildController(frame)
+		ctrl._multiCtrl = multiCtrl
+
+		-- Alert category: the controller's first animGroup should wire OnFinished
+		-- to hide the frame. We also set up a fallback here.
+		if def.category == "alert" and multiCtrl then
+			local origPlay = multiCtrl.Play
+			multiCtrl.Play = function(self)
+				frame:Show()
+				origPlay(self)
+			end
+		end
+	elseif def.buildAnimGroup and tex then
 		local ag = def.buildAnimGroup(tex)
 		ctrl._animGroup = ag
 

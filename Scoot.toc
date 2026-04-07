@@ -57,6 +57,7 @@ core/components/cooldowns/keybinds.lua
 core/components/cooldowns/essential.lua
 core/components/cooldowns/utility.lua
 core/components/cooldowns/pixelglow.lua
+core/components/cooldowns/procstart.lua
 core/components/cooldowns/trackedbuffs.lua
 core/components/cooldowns/trackedbars/init.lua
 core/components/cooldowns/trackedbars/suppression.lua

@@ -364,6 +364,9 @@ function Controls:CreateCollapsibleSection(options)
         if self._infoIcon and self._infoIcon.Cleanup then
             self._infoIcon:Cleanup()
         end
+        if self._innerBuilder then
+            self._innerBuilder:Cleanup()
+        end
     end
 
     return section
