@@ -558,52 +558,62 @@ function Navigation:BuildRows(contentFrame)
     local yOffset = 0
     local rowIndex = 0
 
-    for parentIdx, parent in ipairs(self.NavModel) do
-        -- Skip hidden sections (e.g., Debug) unless explicitly enabled in profile
-        local debugEnabled = addon.db and addon.db.profile and addon.db.profile.debugMenuEnabled
-        if parent.hidden and not debugEnabled then
-            -- Skip this parent and its children entirely
+    -- Build sorted iteration order: disabled parent groups sink to bottom
+    local debugEnabled = addon.db and addon.db.profile and addon.db.profile.debugMenuEnabled
+    local enabledIndices = {}
+    local disabledIndices = {}
+    for i, parent in ipairs(self.NavModel) do
+        local skip = parent.hidden and not debugEnabled
+        if not skip and parent.collapsible and self:AreAllChildrenModuleDisabled(parent) then
+            disabledIndices[#disabledIndices + 1] = i
+        elseif not skip then
+            enabledIndices[#enabledIndices + 1] = i
+        end
+    end
+    for _, idx in ipairs(disabledIndices) do
+        enabledIndices[#enabledIndices + 1] = idx
+    end
 
-        else
-            rowIndex = rowIndex + 1
+    for _, parentIdx in ipairs(enabledIndices) do
+        local parent = self.NavModel[parentIdx]
+        rowIndex = rowIndex + 1
 
-            -- Check if all children's modules are disabled (grays out the parent)
-            local isParentModuleDisabled = self:AreAllChildrenModuleDisabled(parent)
-            if isParentModuleDisabled then
-                self._expandedSections[parent.key] = false
-            end
+        -- Check if all children's modules are disabled (grays out the parent)
+        local isParentModuleDisabled = self:AreAllChildrenModuleDisabled(parent)
+        if isParentModuleDisabled then
+            self._expandedSections[parent.key] = false
+        end
 
-            -- Create parent row
-            local parentRow = self:CreateParentRow(contentFrame, parent, yOffset, isParentModuleDisabled)
-            self._rows[rowIndex] = parentRow
-            yOffset = yOffset - PARENT_ROW_HEIGHT
+        -- Create parent row
+        local parentRow = self:CreateParentRow(contentFrame, parent, yOffset, isParentModuleDisabled)
+        self._rows[rowIndex] = parentRow
+        yOffset = yOffset - PARENT_ROW_HEIGHT
 
-            -- Create child rows if parent is collapsible and has children
-            if parent.collapsible and parent.children then
-                local isExpanded = self._expandedSections[parent.key]
+        -- Create child rows if parent is collapsible and has children
+        if parent.collapsible and parent.children then
+            local isExpanded = self._expandedSections[parent.key]
 
-                for childIdx, child in ipairs(parent.children) do
-                    rowIndex = rowIndex + 1
-                    local isLastChild = (childIdx == #parent.children)
-                    local isModuleDisabled = child.module and not self:IsNavModuleActive(child.module, child.moduleSubId)
-                    local childRow = self:CreateChildRow(
-                        contentFrame,
-                        child,
-                        yOffset,
-                        isLastChild,
-                        isExpanded,
-                        #parent.children,
-                        childIdx,
-                        isModuleDisabled
-                    )
-                    self._rows[rowIndex] = childRow
+            for childIdx, child in ipairs(parent.children) do
+                rowIndex = rowIndex + 1
+                local isLastChild = (childIdx == #parent.children)
+                local isModuleDisabled = child.module and not self:IsNavModuleActive(child.module, child.moduleSubId)
+                local childRow = self:CreateChildRow(
+                    contentFrame,
+                    child,
+                    yOffset,
+                    isLastChild,
+                    isExpanded,
+                    #parent.children,
+                    childIdx,
+                    isModuleDisabled
+                )
+                self._rows[rowIndex] = childRow
 
-                    if isExpanded then
-                        yOffset = yOffset - ROW_HEIGHT
-                    end
+                if isExpanded then
+                    yOffset = yOffset - ROW_HEIGHT
                 end
             end
-        end  -- end else (skip hidden sections)
+        end
     end
 
     -- Set content frame height
