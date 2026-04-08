@@ -88,9 +88,9 @@ addon.SPEC_GRADIENT_COLORS = {
     [261] = { base = { 0.56, 0.36, 0.76 }, endpoint = { 0.68, 0.45, 0.92 } },  -- Subtlety (shadow purple)
 
     -- Shaman (class: 0.00, 0.44, 0.87 — blue)
-    [262] = { base = { 0.85, 0.50, 0.15 }, endpoint = { 1.00, 0.72, 0.38 } },  -- Elemental (lava orange)
+    [262] = { base = { 0.75, 0.20, 0.05 }, endpoint = { 1.00, 0.45, 0.10 } },  -- Elemental (molten lava)
     [263] = { base = { 0.80, 0.75, 0.20 }, endpoint = { 0.95, 0.92, 0.45 } },  -- Enhancement (storm yellow)
-    [264] = { base = { 0.15, 0.65, 0.70 }, endpoint = { 0.40, 0.85, 0.88 } },  -- Restoration (water teal)
+    [264] = { base = { 0.08, 0.50, 0.30 }, endpoint = { 0.25, 0.75, 0.50 } },  -- Restoration (dark emerald)
 
     -- Warlock (class: 0.53, 0.53, 0.93 — purple/blue)
     [265] = { base = { 0.45, 0.65, 0.20 }, endpoint = { 0.68, 0.85, 0.42 } },  -- Affliction (sickly green)
