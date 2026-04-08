@@ -1254,7 +1254,17 @@ function RaidFrames.installHooks()
 
         -- Per-frame integrity check (mirrors partyframes/core.lua pattern)
         local function runIntegrityCheck()
-            if isEditModeActive() then return end
+            if isEditModeActive() then
+                -- Detect stuck guard: ask editmode to verify against Blizzard state
+                if addon.EditMode and addon.EditMode.ForceResetIfStuck then
+                    if not addon.EditMode.ForceResetIfStuck() then
+                        return -- Edit Mode is genuinely active
+                    end
+                    -- Guard was stuck and has been reset; fall through
+                else
+                    return
+                end
+            end
             if InCombatLockdown and InCombatLockdown() then return end
 
             local db = addon and addon.db and addon.db.profile
@@ -1336,7 +1346,25 @@ function RaidFrames.installHooks()
         integrityEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
         integrityEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
         integrityEventFrame:SetScript("OnEvent", function()
-            if isEditModeActive() then return end
+            if isEditModeActive() then
+                -- Guard is active — schedule a deferred check to detect stuck state.
+                -- 2s delay lets Blizzard state settle after load/group-join transitions.
+                if addon.EditMode and addon.EditMode.ForceResetIfStuck then
+                    C_Timer.After(2.0, function()
+                        if not isEditModeActive() then return end -- already cleared
+                        if not addon.EditMode.ForceResetIfStuck() then return end
+                        -- State was stuck; schedule the refresh we skipped
+                        local inRaid = IsInRaid and IsInRaid()
+                        if inRaid then
+                            scheduleFullRefresh()
+                            if not integrityTicker then
+                                integrityTicker = C_Timer.NewTicker(5, runIntegrityCheck)
+                            end
+                        end
+                    end)
+                end
+                return
+            end
             local inRaid = IsInRaid and IsInRaid()
             if inRaid then
                 scheduleFullRefresh()
@@ -1359,3 +1387,194 @@ end
 
 -- Install hooks on load
 RaidFrames.installHooks()
+
+--------------------------------------------------------------------------------
+-- Diagnostic: /scoot debug raidframes
+-- Also auto-fires 3s after PLAYER_ENTERING_WORLD if in a raid.
+-- Captures the exact state of all raid frames to identify why they're invisible.
+--------------------------------------------------------------------------------
+function addon.DebugDumpRaidFrames()
+    local lines = {}
+    local function add(s) lines[#lines + 1] = s end
+
+    add("=== Raid Frames Diagnostic ===")
+    add(string.format("Time: %s", date("%Y-%m-%d %H:%M:%S")))
+    add(string.format("InRaid: %s", tostring(IsInRaid and IsInRaid())))
+    add(string.format("InGroup: %s", tostring(IsInGroup and IsInGroup())))
+    add(string.format("InCombatLockdown: %s", tostring(InCombatLockdown and InCombatLockdown())))
+
+    -- Edit Mode guard state
+    local emGuard = "N/A"
+    if addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening then
+        emGuard = tostring(addon.EditMode.IsEditModeActiveOrOpening())
+    end
+    add(string.format("isEditModeActive(): %s", emGuard))
+
+    -- Check actual Blizzard Edit Mode state
+    local mgr = _G.EditModeManagerFrame
+    if mgr then
+        local ok1, active = pcall(function() return mgr.editModeActive end)
+        local ok2, shown = pcall(mgr.IsShown, mgr)
+        add(string.format("EditModeManagerFrame.editModeActive: %s (ok=%s)",
+            tostring(active), tostring(ok1)))
+        add(string.format("EditModeManagerFrame:IsShown(): %s (ok=%s)",
+            tostring(shown), tostring(ok2)))
+    else
+        add("EditModeManagerFrame: nil")
+    end
+    add(string.format("_openingEditMode: %s", tostring(addon.EditMode and addon.EditMode._openingEditMode)))
+    add(string.format("_exitingEditMode: %s", tostring(addon.EditMode and addon.EditMode._exitingEditMode)))
+
+    -- DB config check
+    local db = addon and addon.db and addon.db.profile
+    local groupFrames = db and rawget(db, "groupFrames") or nil
+    local cfg = groupFrames and rawget(groupFrames, "raid") or nil
+    if cfg then
+        add(string.format("\nhealthBarTexture: %s", tostring(cfg.healthBarTexture)))
+        add(string.format("healthBarColorMode: %s", tostring(cfg.healthBarColorMode)))
+        add(string.format("healthBarBackgroundTexture: %s", tostring(cfg.healthBarBackgroundTexture)))
+        add(string.format("healthBarBackgroundColorMode: %s", tostring(cfg.healthBarBackgroundColorMode)))
+        local hasCustom = (cfg.healthBarTexture and cfg.healthBarTexture ~= "default")
+                       or (cfg.healthBarColorMode and cfg.healthBarColorMode ~= "default")
+        add(string.format("hasCustom (fg): %s", tostring(hasCustom)))
+    else
+        add("\ncfg (db.groupFrames.raid): NIL — overlays will not be applied")
+    end
+
+    -- Container state
+    local container = _G.CompactRaidFrameContainer
+    if container then
+        local okS, shown = pcall(container.IsShown, container)
+        local okV, visible = pcall(container.IsVisible, container)
+        add(string.format("\nCompactRaidFrameContainer: exists, IsShown=%s, IsVisible=%s",
+            tostring(shown), tostring(visible)))
+    else
+        add("\nCompactRaidFrameContainer: nil (does not exist)")
+    end
+
+    -- Sample frames
+    add("\n--- Combined Layout (CompactRaidFrame1..40) ---")
+    local combinedExists, combinedShown = 0, 0
+    for i = 1, 40 do
+        local frame = _G["CompactRaidFrame" .. i]
+        if frame then
+            combinedExists = combinedExists + 1
+            local okS, shown = pcall(frame.IsShown, frame)
+            if okS and shown then combinedShown = combinedShown + 1 end
+        end
+    end
+    add(string.format("Exist: %d, Shown: %d", combinedExists, combinedShown))
+
+    add("\n--- Group Layout (CompactRaidGroup*Member*) ---")
+    local groupExists, groupShown = 0, 0
+    for g = 1, 8 do
+        for m = 1, 5 do
+            local frame = _G["CompactRaidGroup" .. g .. "Member" .. m]
+            if frame then
+                groupExists = groupExists + 1
+                local okS, shown = pcall(frame.IsShown, frame)
+                if okS and shown then groupShown = groupShown + 1 end
+            end
+        end
+    end
+    add(string.format("Exist: %d, Shown: %d", groupExists, groupShown))
+
+    -- Detailed state for first 5 visible frames
+    add("\n--- Detailed Frame State (first 5 shown frames) ---")
+    local detailed = 0
+    local function detailFrame(frameName)
+        if detailed >= 5 then return end
+        local frame = _G[frameName]
+        if not frame then return end
+        local okS, shown = pcall(frame.IsShown, frame)
+        if not (okS and shown) then return end
+        detailed = detailed + 1
+        add(string.format("\n[%s]", frameName))
+        -- Unit
+        local okU, unit = pcall(function() return frame.displayedUnit or frame.unit end)
+        add(string.format("  unit: %s (ok=%s)", tostring(unit), tostring(okU)))
+        -- HealthBar
+        local bar = frame.healthBar
+        if not bar then
+            add("  healthBar: nil")
+            return
+        end
+        local okBS, barShown = pcall(bar.IsShown, bar)
+        local okBV, barVisible = pcall(bar.IsVisible, bar)
+        add(string.format("  healthBar: IsShown=%s, IsVisible=%s", tostring(barShown), tostring(barVisible)))
+        -- Fill texture
+        local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+        if fill then
+            local okA, alpha = pcall(fill.GetAlpha, fill)
+            local okT, tex = pcall(fill.GetTexture, fill)
+            add(string.format("  fill: alpha=%s, tex=%s", tostring(alpha), tostring(tex)))
+        else
+            add("  fill: nil (no status bar texture)")
+        end
+        -- Overlay state
+        local state = getState(bar)
+        if state then
+            local overlay = state.healthOverlay
+            add(string.format("  overlayActive: %s", tostring(state.overlayActive)))
+            add(string.format("  healthOverlay: %s", overlay and "exists" or "nil"))
+            if overlay then
+                local okOS, ovShown = pcall(overlay.IsShown, overlay)
+                local okOV, ovVisible = pcall(overlay.IsVisible, overlay)
+                local okOA, ovAlpha = pcall(overlay.GetAlpha, overlay)
+                local okOT, ovTex = pcall(overlay.GetTexture, overlay)
+                add(string.format("  overlay IsShown=%s, IsVisible=%s, alpha=%s, tex=%s",
+                    tostring(ovShown), tostring(ovVisible), tostring(ovAlpha), tostring(ovTex)))
+                -- Check if overlay has valid anchor points
+                local okP, p1 = pcall(overlay.GetNumPoints, overlay)
+                add(string.format("  overlay numPoints=%s", tostring(p1)))
+            end
+            add(string.format("  fingerprint: %s", state.lastAppliedFingerprint and "set" or "nil"))
+            add(string.format("  overlayHooksInstalled: %s", tostring(state.overlayHooksInstalled)))
+            add(string.format("  textureSwapHooked: %s", tostring(state.textureSwapHooked)))
+        else
+            add("  RaidFrameState: nil (no state for this bar)")
+        end
+    end
+
+    for i = 1, 40 do detailFrame("CompactRaidFrame" .. i) end
+    for g = 1, 8 do
+        for m = 1, 5 do detailFrame("CompactRaidGroup" .. g .. "Member" .. m) end
+    end
+
+    if detailed == 0 then
+        add("\n  (No shown frames found — checking first 5 existing frames instead)")
+        detailed = 0
+        local function detailAnyFrame(frameName)
+            if detailed >= 5 then return end
+            local frame = _G[frameName]
+            if not frame then return end
+            detailed = detailed + 1
+            add(string.format("\n[%s] (exists but not shown)", frameName))
+            local okS, shown = pcall(frame.IsShown, frame)
+            local okV, visible = pcall(frame.IsVisible, frame)
+            add(string.format("  IsShown=%s, IsVisible=%s", tostring(shown), tostring(visible)))
+            local okU, unit = pcall(function() return frame.displayedUnit or frame.unit end)
+            add(string.format("  unit: %s", tostring(unit)))
+            local bar = frame.healthBar
+            if bar then
+                local okBS, barShown = pcall(bar.IsShown, bar)
+                add(string.format("  healthBar: IsShown=%s", tostring(barShown)))
+            else
+                add("  healthBar: nil")
+            end
+        end
+        for i = 1, 40 do detailAnyFrame("CompactRaidFrame" .. i) end
+        for g = 1, 8 do
+            for m = 1, 5 do detailAnyFrame("CompactRaidGroup" .. g .. "Member" .. m) end
+        end
+    end
+
+    add("\n--- Hooks ---")
+    add(string.format("_RaidFrameHooksInstalled: %s", tostring(addon._RaidFrameHooksInstalled)))
+    add(string.format("_RaidFrameIntegrityCheckInstalled: %s", tostring(addon._RaidFrameIntegrityCheckInstalled)))
+
+    if addon.DebugShowWindow then
+        addon.DebugShowWindow("Raid Frames Diagnostic", lines)
+    end
+end
+

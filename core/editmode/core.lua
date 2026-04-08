@@ -456,6 +456,32 @@ function addon.EditMode.IsEditModeActiveOrOpening()
         or false
 end
 
+-- Force-clear editModeActiveState if Blizzard confirms Edit Mode is not active.
+-- Called by integrity systems (raidframes, partyframes) when they detect the
+-- guard may be permanently stuck true — e.g., from a seeding false positive
+-- during addon load, or an EditMode.Enter event without a matching Exit.
+-- Returns true if the state was reset, false if Edit Mode is genuinely active.
+function addon.EditMode.ForceResetIfStuck()
+    if not editModeActiveState then return false end
+    local mgr = _G.EditModeManagerFrame
+    if not mgr then
+        editModeActiveState = false
+        addon.EditMode._openingEditMode = nil
+        addon.EditMode._exitingEditMode = nil
+        return true
+    end
+    -- pcall + explicit == true: safe against secret values in 12.0
+    local ok1, active = pcall(function() return mgr.editModeActive end)
+    if ok1 and active == true then return false end -- genuinely active
+    local ok2, shown = pcall(mgr.IsShown, mgr)
+    if ok2 and shown == true then return false end  -- genuinely shown
+    -- Both checks say not active, but our flag says active — stuck
+    editModeActiveState = false
+    addon.EditMode._openingEditMode = nil
+    addon.EditMode._exitingEditMode = nil
+    return true
+end
+
 function addon.EditMode.MarkOpeningEditMode()
     addon.EditMode._openingEditMode = true
     if _G.C_Timer and _G.C_Timer.After then
@@ -949,13 +975,65 @@ function addon.EditMode.Initialize()
         -- OPT-28: Seed the cached state for reload-while-in-Edit-Mode.
         -- EventRegistry callbacks only fire on transitions, so if Edit Mode
         -- was already active before this code ran, the flag would be stale.
+        -- pcall + explicit == true: safe against secret values in 12.0
+        -- (raw boolean test on mgr.editModeActive can error on secrets).
         do
             local mgr = _G.EditModeManagerFrame
             if mgr then
-                if mgr.editModeActive or (mgr.IsShown and mgr:IsShown()) then
+                local isActive = false
+                local ok1, active = pcall(function() return mgr.editModeActive end)
+                if ok1 and active == true then isActive = true end
+                if not isActive then
+                    local ok2, shown = pcall(mgr.IsShown, mgr)
+                    if ok2 and shown == true then isActive = true end
+                end
+                if isActive then
                     editModeActiveState = true
                 end
             end
+        end
+
+        -- Deferred verification: if seeding set editModeActiveState=true,
+        -- re-check 2s later that Edit Mode is ACTUALLY still active. Catches
+        -- false positives from transient IsShown()/editModeActive during load
+        -- or from an EditMode.Enter event without a matching Exit (lock state).
+        if editModeActiveState then
+            C_Timer.After(2.0, function()
+                if not editModeActiveState then return end -- already cleared
+                local mgr = _G.EditModeManagerFrame
+                if not mgr then
+                    editModeActiveState = false
+                    return
+                end
+                local stillActive = false
+                local ok1, active = pcall(function() return mgr.editModeActive end)
+                if ok1 and active == true then stillActive = true end
+                if not stillActive then
+                    local ok2, shown = pcall(mgr.IsShown, mgr)
+                    if ok2 and shown == true then stillActive = true end
+                end
+                if not stillActive then
+                    editModeActiveState = false
+                    addon.EditMode._openingEditMode = nil
+                    addon.EditMode._exitingEditMode = nil
+                    -- Trigger overlay reapply since hooks may have been suppressed
+                    C_Timer.After(0.1, function()
+                        if InCombatLockdown and InCombatLockdown() then return end
+                        if addon.ApplyRaidFrameHealthOverlays then
+                            pcall(addon.ApplyRaidFrameHealthOverlays)
+                        end
+                        if addon.ApplyRaidFrameHealthBarBorders then
+                            pcall(addon.ApplyRaidFrameHealthBarBorders)
+                        end
+                        if addon.ApplyPartyFrameHealthOverlays then
+                            pcall(addon.ApplyPartyFrameHealthOverlays)
+                        end
+                        if addon.ApplyPartyFrameHealthBarBorders then
+                            pcall(addon.ApplyPartyFrameHealthBarBorders)
+                        end
+                    end)
+                end
+            end)
         end
     end
 

@@ -1622,7 +1622,17 @@ function PartyFrames.installHooks()
         local integrityTicker = nil
 
         local function runIntegrityCheck()
-            if isEditModeActive() then return end
+            if isEditModeActive() then
+                -- Detect stuck guard: ask editmode to verify against Blizzard state
+                if addon.EditMode and addon.EditMode.ForceResetIfStuck then
+                    if not addon.EditMode.ForceResetIfStuck() then
+                        return -- Edit Mode is genuinely active
+                    end
+                    -- Guard was stuck and has been reset; fall through
+                else
+                    return
+                end
+            end
             if InCombatLockdown and InCombatLockdown() then return end
 
             local db = addon and addon.db and addon.db.profile
@@ -1684,7 +1694,21 @@ function PartyFrames.installHooks()
         integrityEventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
         integrityEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
         integrityEventFrame:SetScript("OnEvent", function()
-            if isEditModeActive() then return end
+            if isEditModeActive() then
+                -- Guard is active — schedule a deferred check to detect stuck state.
+                if addon.EditMode and addon.EditMode.ForceResetIfStuck then
+                    C_Timer.After(2.0, function()
+                        if not isEditModeActive() then return end -- already cleared
+                        if not addon.EditMode.ForceResetIfStuck() then return end
+                        -- State was stuck; schedule the ticker we skipped
+                        local inGroup = IsInGroup and IsInGroup()
+                        if inGroup and not integrityTicker then
+                            integrityTicker = C_Timer.NewTicker(5, runIntegrityCheck)
+                        end
+                    end)
+                end
+                return
+            end
             local inGroup = IsInGroup and IsInGroup()
             if inGroup and not integrityTicker then
                 integrityTicker = C_Timer.NewTicker(5, runIntegrityCheck)

@@ -324,6 +324,16 @@ function SlashCmdList.SCOOT(msg, editBox)
             return
         end
 
+        -- /scoot debug raidframes
+        if sub1 == "raidframes" or sub1 == "rf" then
+            if addon.DebugDumpRaidFrames then
+                addon.DebugDumpRaidFrames()
+            else
+                addon:Print("Raid Frames debug not available (raidframes module missing).")
+            end
+            return
+        end
+
         -- /scoot debug cdmlayers
         if sub1 == "cdmlayers" then
             if addon.DebugCDMLayers then
