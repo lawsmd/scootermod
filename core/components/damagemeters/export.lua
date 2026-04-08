@@ -118,8 +118,34 @@ local function OnExportInspectReady(self, event, inspecteeGUID)
         end
     end
 
+    -- Store player name for name-based fallback lookups at export time
+    local uNameOk, uName = pcall(UnitName, unit)
+    if uNameOk and uName then
+        entry.name = uName:match("^([^%-]+)") or uName
+    end
+
     inspectCache[inspecteeGUID] = entry
-    pcall(ClearInspectPlayer)
+
+    -- Publish to shared cache so tooltip hovers and export ticker cross-populate
+    if entry.itemLevel then
+        if not addon._sharedIlvlCache then addon._sharedIlvlCache = {} end
+        addon._sharedIlvlCache[inspecteeGUID] = {
+            ilvl = entry.itemLevel,
+            name = entry.name,
+            time = entry.time,
+        }
+    end
+
+    -- Don't clear inspect data if the inspect window is open
+    local inspFrame = _G["InspectFrame"]
+    local inspOpen = false
+    if inspFrame then
+        local okShown, shown = pcall(inspFrame.IsShown, inspFrame)
+        inspOpen = okShown and shown or false
+    end
+    if not inspOpen then
+        pcall(ClearInspectPlayer)
+    end
 end
 
 local function StartInspectTicker()
@@ -205,7 +231,7 @@ end
 -- Export Data Gathering
 --------------------------------------------------------------------------------
 
-function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
+function addon.GatherDamageMeterExportData(sessionType, primaryMeterType, sessionID)
     if not C_DamageMeter or not C_DamageMeter.IsDamageMeterAvailable then
         return nil, "Damage Meter API not available."
     end
@@ -251,7 +277,12 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
     local sessionData = {}
     for _, mt in ipairs(columns) do
         if not sessionData[mt] then
-            local ok, result = pcall(C_DamageMeter.GetCombatSessionFromType, sessionType, mt)
+            local ok, result
+            if sessionID then
+                ok, result = pcall(C_DamageMeter.GetCombatSessionFromID, sessionID, mt)
+            else
+                ok, result = pcall(C_DamageMeter.GetCombatSessionFromType, sessionType, mt)
+            end
             if ok and result then sessionData[mt] = result end
         end
     end
@@ -333,7 +364,7 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
 
     -- Duration
     local duration = primarySession.durationSeconds
-    if not duration then
+    if not duration and not sessionID and sessionType then
         local ok, dur = pcall(C_DamageMeter.GetSessionDurationSeconds, sessionType)
         if ok then duration = dur end
     end
@@ -377,9 +408,35 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
                 p.itemLevel = math.floor(equipped)
             end
         else
+            -- Three-tier fallback: export cache by GUID → shared cache by GUID → name match
             local cached = inspectCache[guid]
+            if not cached and addon._sharedIlvlCache then
+                local shared = addon._sharedIlvlCache[guid]
+                if shared then
+                    cached = { itemLevel = shared.ilvl }
+                end
+            end
+            if not cached then
+                local targetName = p.name
+                if targetName and targetName ~= "Unknown" then
+                    for _, entry in pairs(inspectCache) do
+                        if entry.name == targetName and entry.itemLevel then
+                            cached = entry
+                            break
+                        end
+                    end
+                    if not cached and addon._sharedIlvlCache then
+                        for _, entry in pairs(addon._sharedIlvlCache) do
+                            if entry.name == targetName and entry.ilvl then
+                                cached = { itemLevel = entry.ilvl }
+                                break
+                            end
+                        end
+                    end
+                end
+            end
             if cached then
-                p.itemLevel = cached.itemLevel
+                if cached.itemLevel then p.itemLevel = cached.itemLevel end
                 if cached.specName then p.specName = cached.specName end
             end
         end
@@ -393,7 +450,7 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
         playerOrder = playerOrder,
         columns = columns,
         columnNames = columnNames,
-        sessionLabel = sessionLabels[sessionType] or "Unknown",
+        sessionLabel = sessionLabels[sessionType] or (sessionID and ("Segment #" .. sessionID)) or "Unknown",
         duration = duration,
         instanceLabel = instanceLabel,
         startZoneLabel = DM._dmResetZoneSnapshot,

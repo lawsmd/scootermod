@@ -187,9 +187,18 @@ function DM2._UpdateTimerText(windowIndex)
         duration = win.mergedData and win.mergedData.durationSeconds
     end
 
-    -- Update title text
+    -- Compute timer string early (needed for title width calculation)
     local comp = DM2._comp
     local db = comp and comp.db
+    local timerStr = ""
+    if duration and duration > 0 then
+        timerStr = "[" .. DM2._FormatDuration(duration) .. "]"
+    end
+    if win.timerText then
+        win.timerText:SetText(timerStr)
+    end
+
+    -- Update title text
     local isVertical = db and db.verticalTitleMode
 
     if isVertical and win.verticalTitle then
@@ -197,18 +206,69 @@ function DM2._UpdateTimerText(windowIndex)
         local stacked = label:upper():gsub(".", "%1\n"):sub(1, -2)
         win.verticalTitle:SetText(stacked)
         win.verticalTitle:Show()
-        if win.titleText then win.titleText:SetText("") end
+        if win.titleText then
+            win.titleText:SetText("")
+            win.titleText:SetWidth(0)
+        end
+        win.header:SetHeight(DM2.HEADER_HEIGHT)
     else
         if win.verticalTitle then win.verticalTitle:Hide() end
-        if win.titleText then win.titleText:SetText(label) end
-    end
+        if win.titleText then
+            local isSegment = cfg.sessionID ~= nil
+            if isSegment then
+                -- Calculate available title width to prevent column header overlap
+                local fw = tonumber(cfg.frameWidth or (db and db.frameWidth)) or 350
 
-    -- Update timer text
-    if win.timerText then
-        if duration and duration > 0 then
-            win.timerText:SetText("[" .. DM2._FormatDuration(duration) .. "]")
-        else
-            win.timerText:SetText("")
+                -- Right boundary: before the visible column header text
+                local rightBound
+                local ch = win.columnHeaders and win.columnHeaders[1]
+                if ch and ch:IsShown() then
+                    local chW = ch:GetStringWidth()
+                    rightBound = (chW and chW > 0) and (fw - chW - 12) or (fw - 60)
+                else
+                    rightBound = fw - 8
+                end
+
+                -- Reserve space for timer text
+                local timerW = 0
+                if timerStr ~= "" and win.timerText then
+                    timerW = (win.timerText:GetStringWidth() or 0) + 8
+                end
+
+                local maxTitleWidth = rightBound - 26 - timerW
+                if maxTitleWidth < 40 then maxTitleWidth = 40 end
+
+                -- Apply constrained title (word wrap handles multi-word names)
+                win.titleText:SetWidth(maxTitleWidth)
+                win.titleText:SetText(label)
+
+                -- Single long word without spaces: manual "..." truncation
+                if not label:find(" ") then
+                    local fullW = win.titleText:GetStringWidth()
+                    if fullW and fullW > maxTitleWidth then
+                        local trunc = label
+                        while #trunc > 1 do
+                            trunc = trunc:sub(1, -2)
+                            win.titleText:SetText(trunc .. "...")
+                            local tw = win.titleText:GetStringWidth()
+                            if tw and tw <= maxTitleWidth then break end
+                        end
+                    end
+                end
+
+                -- Expand header height if title wrapped to 2 lines
+                local titleH = win.titleText:GetStringHeight() or 15
+                if titleH > 20 then
+                    win.header:SetHeight(math.max(DM2.HEADER_HEIGHT, titleH + 8))
+                else
+                    win.header:SetHeight(DM2.HEADER_HEIGHT)
+                end
+            else
+                -- Overall/Current: standard single-line layout
+                win.titleText:SetWidth(0)
+                win.titleText:SetText(label)
+                win.header:SetHeight(DM2.HEADER_HEIGHT)
+            end
         end
     end
 end

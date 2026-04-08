@@ -337,6 +337,9 @@ function DM2._CreateWindow(windowIndex, comp)
     titleText:SetPoint("LEFT", gearBtn, "RIGHT", 4, 0)
     titleText:SetTextColor(1, 1, 1, 1) -- default white
     titleText:SetText("Overall")
+    titleText:SetWordWrap(true)
+    titleText:SetMaxLines(2)
+    titleText:SetNonSpaceWrap(false)
 
     -- Timer text (e.g., "[5:23]") — to the right of title
     local timerText = header:CreateFontString(nil, "OVERLAY")

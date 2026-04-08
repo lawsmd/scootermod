@@ -38,13 +38,17 @@ function DM2._ExportToWindow(windowIndex)
     local cfg = DM2._GetWindowConfig(windowIndex)
     if not cfg then return end
 
-    local sessionType = cfg.sessionType or 0
+    local sessionType = cfg.sessionType or (not cfg.sessionID and 0) or nil
     local primaryMeterType = DM2._GetPrimaryMeterType(cfg)
 
-    local data, err = addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
+    local data, err = addon.GatherDamageMeterExportData(sessionType, primaryMeterType, cfg.sessionID)
     if not data then
         if addon.Print then addon:Print(err or "No export data available.") end
         return
+    end
+
+    if cfg.sessionID and cfg._sessionName then
+        data.sessionLabel = cfg._sessionName
     end
 
     if addon.ShowHighScoreWindow then
@@ -64,16 +68,20 @@ function DM2._ExportToChat(windowIndex)
     local comp = DM2._comp
     if not comp then return end
 
-    local sessionType = cfg.sessionType or 0
+    local sessionType = cfg.sessionType or (not cfg.sessionID and 0) or nil
     local primaryMeterType = DM2._GetPrimaryMeterType(cfg)
     local channel = comp.db.exportChatChannel or "PARTY"
     local lineCount = comp.db.exportChatLineCount or 5
 
     -- Use the shared export function if available, otherwise fall back to direct gather+send
-    local data, err = addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
+    local data, err = addon.GatherDamageMeterExportData(sessionType, primaryMeterType, cfg.sessionID)
     if not data then
         if addon.Print then addon:Print(err or "No export data available.") end
         return
+    end
+
+    if cfg.sessionID and cfg._sessionName then
+        data.sessionLabel = cfg._sessionName
     end
 
     -- Build messages
@@ -107,14 +115,18 @@ function DM2._ExportToChatChannel(windowIndex, channel, lineCount)
     local cfg = DM2._GetWindowConfig(windowIndex)
     if not cfg then return end
 
-    local sessionType = cfg.sessionType or 0
+    local sessionType = cfg.sessionType or (not cfg.sessionID and 0) or nil
     local primaryMeterType = DM2._GetPrimaryMeterType(cfg)
     lineCount = lineCount or 5
 
-    local data, err = addon.GatherDamageMeterExportData(sessionType, primaryMeterType)
+    local data, err = addon.GatherDamageMeterExportData(sessionType, primaryMeterType, cfg.sessionID)
     if not data then
         if addon.Print then addon:Print(err or "No export data available.") end
         return
+    end
+
+    if cfg.sessionID and cfg._sessionName then
+        data.sessionLabel = cfg._sessionName
     end
 
     local messages = {}
