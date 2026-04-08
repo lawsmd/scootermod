@@ -534,6 +534,13 @@ local function addItemLevelLine(tooltip, ilvl)
     isAddingItemLevel = false
 end
 
+local function IsInspectFrameOpen()
+    local frame = _G["InspectFrame"]
+    if not frame then return false end
+    local ok, shown = pcall(frame.IsShown, frame)
+    return ok and shown or false
+end
+
 local function OnInspectReady(self, event, inspecteeGUID)
     if not isItemLevelEnabled() then return end
     if not inspecteeGUID or inspecteeGUID ~= pendingInspectGUID then return end
@@ -541,6 +548,16 @@ local function OnInspectReady(self, event, inspecteeGUID)
     local ok, ilvl = pcall(C_PaperDollInfo.GetInspectItemLevel, pendingInspectUnit)
     if ok and ilvl and type(ilvl) == "number" and ilvl > 0 then
         itemLevelCache[inspecteeGUID] = { ilvl = ilvl, time = GetTime() }
+
+        -- Publish to shared cache so export system can leverage hover data
+        if not addon._sharedIlvlCache then addon._sharedIlvlCache = {} end
+        local nameOk, uName = pcall(UnitName, pendingInspectUnit)
+        local cleanName = (nameOk and uName) and uName:match("^([^%-]+)") or nil
+        addon._sharedIlvlCache[inspecteeGUID] = {
+            ilvl = ilvl,
+            name = cleanName,
+            time = GetTime(),
+        }
 
         -- If tooltip is still showing the same unit, append and resize
         local tooltip = GameTooltip
@@ -558,7 +575,9 @@ local function OnInspectReady(self, event, inspecteeGUID)
 
     pendingInspectGUID = nil
     pendingInspectUnit = nil
-    pcall(ClearInspectPlayer)
+    if not IsInspectFrameOpen() then
+        pcall(ClearInspectPlayer)
+    end
 end
 
 local function InitItemLevelSystem()
@@ -597,9 +616,11 @@ local function InitItemLevelSystem()
         local canOk, canInspect = pcall(CanInspect, unitToken, false)
         if not canOk or not canInspect then return end
 
-        pendingInspectGUID = guid
-        pendingInspectUnit = unitToken
-        pcall(NotifyInspect, unitToken)
+        if not IsInspectFrameOpen() then
+            pendingInspectGUID = guid
+            pendingInspectUnit = unitToken
+            pcall(NotifyInspect, unitToken)
+        end
     end)
 
     -- Event frame for async inspect results
