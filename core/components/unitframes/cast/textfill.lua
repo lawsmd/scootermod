@@ -722,7 +722,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 	el = elements.filledLeftCapOL
 	el:ClearAllPoints()
 	el:SetPoint("TOPLEFT", elements.filledLeftCap, "TOPLEFT", -1, 1)
-	el:SetPoint("BOTTOMRIGHT", elements.filledLeftCap, "BOTTOMRIGHT", 1, -1)
+	el:SetPoint("BOTTOMRIGHT", elements.filledLeftCap, "BOTTOMRIGHT", 0, -1)
 	el:SetColorTexture(0, 0, 0, 1)
 	el:Show()
 
@@ -742,7 +742,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 	-- Filled right cap outline
 	el = elements.filledRightCapOL
 	el:ClearAllPoints()
-	el:SetPoint("TOPLEFT", elements.filledRightCap, "TOPLEFT", -1, 1)
+	el:SetPoint("TOPLEFT", elements.filledRightCap, "TOPLEFT", 0, 1)
 	el:SetPoint("BOTTOMRIGHT", elements.filledRightCap, "BOTTOMRIGHT", 1, -1)
 	el:SetColorTexture(0, 0, 0, 1)
 	el:Show()
@@ -960,10 +960,15 @@ local function syncTextFillText(frame, cfg)
 	end
 	-- Copy text content — use cached raw text to avoid copying gradient |cff codes
 	local rawText = getProp(spellFS, "_rampRawText")
+	local secretText = nil  -- GetText result that may be secret (for direct passthrough)
 	if not rawText then
 		local ok_rt, rt = pcall(spellFS.GetText, spellFS)
-		if ok_rt and type(rt) == "string" and not issecretvalue(rt) then
-			rawText = rt
+		if ok_rt and type(rt) == "string" then
+			if not (issecretvalue and issecretvalue(rt)) then
+				rawText = rt
+			else
+				secretText = rt  -- retain for last-resort passthrough
+			end
 		end
 	end
 	-- Fallback to hook-captured text when GetText returns secrets (tainted target/boss frames)
@@ -985,7 +990,14 @@ local function syncTextFillText(frame, cfg)
 	-- Store gradient-active flag for the SetText hook to skip raw text copies
 	local isGradientActive = not isEmpoweredTF and (colorMode_tf == "classGradient" or colorMode_tf == "specGradient" or colorMode_tf == "customGradient")
 	setProp(frame, "textFillGradientActive", isGradientActive or nil)
-	if isGradientActive and addon.BuildColorRampString then
+	-- Secret passthrough: when no non-secret text is available but GetText returned a
+	-- secret, pass it directly to filledText (SetText is AllowedWhenTainted).  Gradient
+	-- processing is skipped (can't do string operations on secrets) and the gradient-
+	-- active flag is cleared so the SetText hook can update filledText on subsequent calls.
+	if (rawText == "") and secretText then
+		elements.filledText:SetText(secretText)
+		setProp(frame, "textFillGradientActive", nil)
+	elseif isGradientActive and addon.BuildColorRampString then
 		local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode_tf, styleCfg_tf)
 		elements.filledText:SetText(addon.BuildColorRampString(rawText, r1, g1, b1, r2, g2, b2))
 		-- Apply matching per-character codes to frame.Text so both strings have identical
