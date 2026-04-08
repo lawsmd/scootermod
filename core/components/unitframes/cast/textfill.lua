@@ -845,7 +845,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 			pcall(function()
 				-- Always store captured text for syncTextFillText fallback
 				-- (GetText may return secrets on tainted target/boss frames)
-				if type(text) == "string" then
+				if type(text) == "string" and not (issecretvalue and issecretvalue(text)) then
 					setProp(frame, "textFillCapturedText", text)
 				end
 				local els = getProp(frame, "textFillElements")
@@ -855,7 +855,7 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 					-- Setting raw text here creates a brief mismatch that can cause
 					-- kerning differences around thin characters like apostrophes.
 					if not getProp(frame, "textFillGradientActive") then
-						els.filledText:SetText(text or "")
+						els.filledText:SetText(text)
 					end
 				end
 			end)
@@ -968,7 +968,12 @@ local function syncTextFillText(frame, cfg)
 	end
 	-- Fallback to hook-captured text when GetText returns secrets (tainted target/boss frames)
 	if not rawText or rawText == "" then
-		rawText = getProp(frame, "textFillCapturedText") or ""
+		local cached = getProp(frame, "textFillCapturedText")
+		if cached and not (issecretvalue and issecretvalue(cached)) then
+			rawText = cached
+		else
+			rawText = ""
+		end
 	end
 	-- Store unfilled text color on frame state for gradient hook access
 	setProp(frame, "textFillUnfilledColor", cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5})
