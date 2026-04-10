@@ -507,128 +507,6 @@ local function InitTooltipIDs()
 
 end
 
---------------------------------------------------------------------------------
--- Player Item Level Display System
--- Self-contained: own processor hook + own re-entrancy guard + own event frame.
--- Independent of the Tooltip ID system (works regardless of showTooltipIDs).
---------------------------------------------------------------------------------
-
-local itemLevelCache = {}           -- GUID -> { ilvl = number, time = number }
-local ITEM_LEVEL_CACHE_TTL = 120    -- seconds before re-inspecting (ilvl changes rarely)
-local pendingInspectGUID = nil
-local pendingInspectUnit = nil
-local itemLevelInitialized = false
-local isAddingItemLevel = false     -- own re-entrancy guard (separate from isAddingIDs)
-
-local function isItemLevelEnabled()
-    local comp = addon.Components and addon.Components.tooltip
-    if not comp or not comp.db then return false end
-    return comp.db.showPlayerItemLevel or false
-end
-
-local function addItemLevelLine(tooltip, ilvl)
-    if not tooltip or not tooltip.AddDoubleLine then return end
-    if isAddingItemLevel then return end
-    isAddingItemLevel = true
-    pcall(tooltip.AddDoubleLine, tooltip, "Item Level:", tostring(math.floor(ilvl)), 0.5, 0.5, 1.0, 1, 1, 1)
-    isAddingItemLevel = false
-end
-
-local function IsInspectFrameOpen()
-    local frame = _G["InspectFrame"]
-    if not frame then return false end
-    local ok, shown = pcall(frame.IsShown, frame)
-    return ok and shown or false
-end
-
-local function OnInspectReady(self, event, inspecteeGUID)
-    if not isItemLevelEnabled() then return end
-    if not inspecteeGUID or inspecteeGUID ~= pendingInspectGUID then return end
-
-    local ok, ilvl = pcall(C_PaperDollInfo.GetInspectItemLevel, pendingInspectUnit)
-    if ok and ilvl and type(ilvl) == "number" and ilvl > 0 then
-        itemLevelCache[inspecteeGUID] = { ilvl = ilvl, time = GetTime() }
-
-        -- Publish to shared cache so export system can leverage hover data
-        if not addon._sharedIlvlCache then addon._sharedIlvlCache = {} end
-        local nameOk, uName = pcall(UnitName, pendingInspectUnit)
-        local cleanName = (nameOk and uName) and uName:match("^([^%-]+)") or nil
-        addon._sharedIlvlCache[inspecteeGUID] = {
-            ilvl = ilvl,
-            name = cleanName,
-            time = GetTime(),
-        }
-
-        -- If tooltip is still showing the same unit, append and resize
-        local tooltip = GameTooltip
-        if tooltip and tooltip:IsShown() then
-            local unitOk, _, unitToken = pcall(tooltip.GetUnit, tooltip)
-            if unitOk and unitToken then
-                local gOk, currentGUID = pcall(UnitGUID, unitToken)
-                if gOk and currentGUID == inspecteeGUID then
-                    addItemLevelLine(tooltip, ilvl)
-                    pcall(tooltip.Show, tooltip)
-                end
-            end
-        end
-    end
-
-    pendingInspectGUID = nil
-    pendingInspectUnit = nil
-    if not IsInspectFrameOpen() then
-        pcall(ClearInspectPlayer)
-    end
-end
-
-local function InitItemLevelSystem()
-    if itemLevelInitialized then return end
-    if not TooltipDataProcessor or not TooltipDataProcessor.AddTooltipPostCall then return end
-    itemLevelInitialized = true
-
-    -- Own processor hook: fires on every tooltip, checks for player units
-    TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tooltip, data)
-        if not isItemLevelEnabled() then return end
-        if isAddingItemLevel then return end
-        if not data or data.type ~= (Enum.TooltipDataType.Unit or -1) then return end
-        if tooltip ~= GameTooltip then return end
-
-        local ok, _, unitToken = pcall(tooltip.GetUnit, tooltip)
-        if not ok or not unitToken then return end
-
-        -- Must be a player, not self
-        local isPlayerOk, isPlayer = pcall(UnitIsPlayer, unitToken)
-        if not isPlayerOk or not isPlayer then return end
-        local isSelfOk, isSelf = pcall(UnitIsUnit, unitToken, "player")
-        if isSelfOk and isSelf then return end
-
-        -- Get GUID for cache key
-        local guidOk, guid = pcall(UnitGUID, unitToken)
-        if not guidOk or not guid or type(guid) ~= "string" then return end
-
-        -- Check cache: show immediately if fresh
-        local cached = itemLevelCache[guid]
-        if cached and (GetTime() - cached.time) < ITEM_LEVEL_CACHE_TTL then
-            addItemLevelLine(tooltip, cached.ilvl)
-            return
-        end
-
-        -- Request inspect (async — INSPECT_READY will add the line later)
-        local canOk, canInspect = pcall(CanInspect, unitToken, false)
-        if not canOk or not canInspect then return end
-
-        if not IsInspectFrameOpen() then
-            pendingInspectGUID = guid
-            pendingInspectUnit = unitToken
-            pcall(NotifyInspect, unitToken)
-        end
-    end)
-
-    -- Event frame for async inspect results
-    local eventFrame = CreateFrame("Frame")
-    eventFrame:RegisterEvent("INSPECT_READY")
-    eventFrame:SetScript("OnEvent", OnInspectReady)
-end
-
 local function ApplyTooltipStyling(self)
     local tooltip = _G["GameTooltip"]
     if not tooltip then return end
@@ -644,9 +522,6 @@ local function ApplyTooltipStyling(self)
 
     -- Initialize tooltip ID system (lazy, one-time)
     InitTooltipIDs()
-
-    -- Initialize item level inspect system (lazy, one-time)
-    InitItemLevelSystem()
 
     -- Apply styling to any already-built tooltip lines
     ApplyGameTooltipText(db)
@@ -742,8 +617,6 @@ addon:RegisterComponentInitializer(function(self)
             -- Tooltip IDs
             showTooltipIDs = { type = "addon", default = false },
 
-            -- Player item level on unit tooltips
-            showPlayerItemLevel = { type = "addon", default = false },
 
             -- Marker for enabling Text section in generic renderer
             supportsText = { type = "addon", default = true },

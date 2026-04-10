@@ -128,13 +128,6 @@ function Tooltip.Render(panel, scrollContent)
         set = function(val) setSetting("showTooltipIDs", val) end,
     })
 
-    -- Parent-level toggle: Show Player Item Level
-    builder:AddToggle({
-        label = "Show Player Item Level",
-        description = "Display the equipped item level of player characters on their tooltip.",
-        get = function() return getSetting("showPlayerItemLevel") or false end,
-        set = function(val) setSetting("showPlayerItemLevel", val) end,
-    })
 
     -- Collapsible section: Sizing
     builder:AddCollapsibleSection({
