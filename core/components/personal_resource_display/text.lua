@@ -127,6 +127,8 @@ local function isDruidTextVisible(db, textType)
     local formID = GetShapeshiftFormID and GetShapeshiftFormID() or 0
     -- Normalize moonkin talent variant to base moonkin ID
     if formID == 35 then formID = 31 end
+    -- Travel (3), Aquatic (4), Flight (27) share base form visibility setting
+    if formID == 3 or formID == 4 or formID == 27 then formID = 0 end
 
     return forms[formID] ~= false
 end
@@ -263,11 +265,17 @@ local function onSourceTextChanged(overlayType, side, text)
     -- text may be a secret value; SetText(secret) is allowed and renders it
     if side == "left" then
         if comp.db.percentTextShow and isDruidTextVisible(comp.db, "percent") then
+            pcall(fs.Show, fs)
             pcall(fs.SetText, fs, text)
+        else
+            pcall(fs.Hide, fs)
         end
     else
         if comp.db.valueTextShow and isDruidTextVisible(comp.db, "value") then
+            pcall(fs.Show, fs)
             pcall(fs.SetText, fs, text)
+        else
+            pcall(fs.Hide, fs)
         end
     end
 end

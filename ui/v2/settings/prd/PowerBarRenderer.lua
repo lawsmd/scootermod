@@ -249,7 +249,7 @@ function PowerBar.Render(panel, scrollContent)
                                 local flyout = Controls:CreateFlyout({
                                     anchor = druidBtn,
                                     direction = "DOWN",
-                                    width = 220,
+                                    width = 260,
                                     height = 160,
                                     padding = 10,
                                     gap = 4,
@@ -257,7 +257,7 @@ function PowerBar.Render(panel, scrollContent)
 
                                 local content = flyout:GetContent()
                                 local forms = {
-                                    { id = 0,  label = "Base Form" },
+                                    { id = 0,  label = "Base / Flight Form" },
                                     { id = 1,  label = "Cat Form" },
                                     { id = 5,  label = "Bear Form" },
                                     { id = 31, label = "Moonkin Form" },
