@@ -132,44 +132,20 @@ function addon:OnInitialize()
     self:InitializeComponents()
 
     -- Snapshot which modules are active this session (for nav filtering).
-    -- Category-level: _activeModules[category] = bool
-    -- Sub-toggle-level: _activeModuleSubs[category][subId] = bool
+    -- Uses MODULE_CATEGORY_ORDER + IsModuleEnabled() instead of pairs() on the
+    -- raw DB table, so that AceDB default-only keys (never explicitly set by the
+    -- user) are included and the snapshot always matches IsModuleEnabled() results.
     self._activeModules = {}
     self._activeModuleSubs = {}
-    local me = self.db and self.db.profile and self.db.profile.moduleEnabled
-    if me then
-        for k, v in pairs(me) do
-            if type(v) == "table" then
-                local catDef = self.MODULE_CATEGORIES and self.MODULE_CATEGORIES[k]
-                if catDef and catDef.noMasterToggle then
-                    -- Derive master state from any sub-toggle key being true
-                    local anyOn = false
-                    for subKey, subVal in pairs(v) do
-                        if subKey ~= "_enabled" and subVal == true then anyOn = true; break end
-                    end
-                    self._activeModules[k] = anyOn
-                else
-                    self._activeModules[k] = v._enabled ~= false
-                end
-                self._activeModuleSubs[k] = {}
-                for subKey, subVal in pairs(v) do
-                    if subKey ~= "_enabled" then
-                        self._activeModuleSubs[k][subKey] = subVal ~= false
-                    end
-                end
-            else
-                self._activeModules[k] = v ~= false
-                -- For mutuallyExclusive categories with boolean storage,
-                -- snapshot first sub-toggle as active, others as inactive
-                if v ~= false then
-                    local catDef = self.MODULE_CATEGORIES and self.MODULE_CATEGORIES[k]
-                    if catDef and catDef.mutuallyExclusive and catDef.subToggles then
-                        self._activeModuleSubs[k] = {}
-                        for _, sub in ipairs(catDef.subToggles) do
-                            self._activeModuleSubs[k][sub.id] = (sub == catDef.subToggles[1])
-                        end
-                    end
-                end
+    for _, category in ipairs(self.MODULE_CATEGORY_ORDER) do
+        self._activeModules[category] = self:IsModuleEnabled(category)
+        local catDef = self.MODULE_CATEGORIES[category]
+        if catDef and catDef.subToggles then
+            self._activeModuleSubs[category] = {}
+            for _, sub in ipairs(catDef.subToggles) do
+                local checkId = sub.members and sub.members[1] or sub.id
+                self._activeModuleSubs[category][sub.id] =
+                    self:IsModuleEnabled(category, checkId) and true or false
             end
         end
     end

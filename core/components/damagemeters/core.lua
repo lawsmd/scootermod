@@ -456,6 +456,9 @@ DM._RefreshDamageMeterOpacity = RefreshDamageMeterOpacity
 --------------------------------------------------------------------------------
 
 addon:RegisterComponentInitializer(function(self)
+    -- Gate: only register if V1 sub-toggle is enabled
+    if not self:IsModuleEnabled("damageMeter", "damageMeter") then return end
+
     local Component = addon.ComponentPrototype
 
     local damageMeter = Component:New({

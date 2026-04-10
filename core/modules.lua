@@ -228,6 +228,11 @@ function addon:SetModuleEnabled(category, subId, value)
         profile.moduleEnabled = {}
     end
     local me = profile.moduleEnabled
+    -- Force materialization: if moduleEnabled exists only via metatable,
+    -- ensure it's in the raw profile so writes persist across accesses.
+    if rawget(profile, "moduleEnabled") == nil then
+        profile.moduleEnabled = me
+    end
 
     local catDef = self.MODULE_CATEGORIES[category]
     local isNoMaster = catDef and catDef.noMasterToggle
@@ -244,7 +249,7 @@ function addon:SetModuleEnabled(category, subId, value)
         -- Sub-toggle: ensure table form
         local current = me[category]
         if type(current) ~= "table" then
-            local wasEnabled = current ~= false
+            local wasEnabled = (current == true)
             me[category] = isNoMaster and {} or { _enabled = wasEnabled }
             current = me[category]
             -- Initialize sub-toggles: for mutuallyExclusive categories only the
