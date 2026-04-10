@@ -171,12 +171,7 @@ end
 
 function Profiles:OnPlayerSpecChanged(opts)
     opts = opts or {}
-    if not self:IsSpecProfilesEnabled() then
-        return
-    end
-    -- Spec Profiles should ONLY react to an actual spec change mid-session.
-    -- Do NOT auto-switch on login/reload, otherwise it can override a manual
-    -- profile switch that intentionally required a reload to establish baselines.
+    -- Login/reload: handled by _reloadActivationLock, no spec-change lock needed.
     if opts.fromLogin then
         return
     end
@@ -184,24 +179,47 @@ function Profiles:OnPlayerSpecChanged(opts)
     if not specID then
         return
     end
-
-    -- Only react to an actual spec change mid-session. Loading screens and other
-    -- incidental triggers can run this path without a spec change; those must not
-    -- prompt/reload simply due to a spec/profile mismatch.
+    -- Duplicate/incidental event for the same spec. No lock needed.
     if self._lastKnownSpecID and specID == self._lastKnownSpecID then
         return
     end
-    -- Genuine spec change detected - record it immediately even if no assignment exists.
+    -- Genuine spec change detected.
     self._lastKnownSpecID = specID
+
+    -- Capture the current profile before any decisions. If Scoot decides NOT to
+    -- switch profiles, a spec-change lock prevents RefreshFromEditMode from
+    -- following Blizzard's C++ per-spec layout memory, which would hot-swap the
+    -- AceDB profile without the required reload.
+    local currentProfile = addon.db and addon.db:GetCurrentProfile()
+    local function setSpecChangeLock()
+        if not currentProfile then return end
+        self._specChangeLock = currentProfile
+        self._specChangeLockUntil = (GetTime and GetTime() or 0) + 2
+        Debug("Spec-change lock set", currentProfile)
+        C_Timer.After(0.15, function()
+            if self._specChangeLock and self._layoutLookup and self._layoutLookup[self._specChangeLock] then
+                self:_setActiveProfile(self._specChangeLock, { force = true })
+                Debug("Spec-change lock: forced profile back", self._specChangeLock)
+            end
+        end)
+    end
+
+    if not self:IsSpecProfilesEnabled() then
+        setSpecChangeLock()
+        return
+    end
 
     local targetProfile = self:GetSpecAssignment(specID)
     if not targetProfile then
+        setSpecChangeLock()
         return
     end
     if addon.db:GetCurrentProfile() == targetProfile then
+        setSpecChangeLock()
         return
     end
     if not self._layoutLookup[targetProfile] then
+        setSpecChangeLock()
         return
     end
 

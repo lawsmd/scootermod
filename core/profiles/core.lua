@@ -809,6 +809,8 @@ function Profiles:Initialize()
     self._lastKnownSpecID = nil
     self._reloadActivationLock = nil
     self._reloadActivationLockUntil = nil
+    self._specChangeLock = nil
+    self._specChangeLockUntil = nil
     self._initialized = true
     Debug("Initialize")
 
@@ -1253,6 +1255,29 @@ function Profiles:RefreshFromEditMode(origin)
                 self._reloadActivationLockUntil = nil
                 Debug("Reload activation lock expired")
                 LogReload("Refresh:lockExpired", { leoActive = activeLayout })
+            end
+        end
+        -- Spec-change lock: prevent Blizzard's C++ per-spec layout memory from
+        -- hot-swapping the profile without the required reload.
+        if self._specChangeLock and self._specChangeLockUntil then
+            if activeLayout == self._specChangeLock then
+                -- LEO agrees with our intended profile; clear lock
+                self._specChangeLock = nil
+                self._specChangeLockUntil = nil
+                Debug("Spec-change lock cleared: LEO matches target", activeLayout)
+            elseif now < self._specChangeLockUntil then
+                -- LEO reports a different layout (Blizzard's per-spec switch); block it
+                Debug("RefreshFromEditMode blocked by spec-change lock",
+                      "lock=" .. tostring(self._specChangeLock),
+                      "LEO=" .. tostring(activeLayout))
+                LogReload("Refresh:specLocked", { lock = self._specChangeLock, leoActive = activeLayout })
+                return
+            else
+                -- Lock expired; clear and fall through
+                self._specChangeLock = nil
+                self._specChangeLockUntil = nil
+                Debug("Spec-change lock expired")
+                LogReload("Refresh:specLockExpired", { leoActive = activeLayout })
             end
         end
         local options = { skipLayout = true }
