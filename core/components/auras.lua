@@ -182,11 +182,42 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         if state.textHooked then return end
         state.textHooked = true
 
+        -- Shared helper: re-apply Scoot's font face/size/style when cache is invalidated.
+        -- Called by both colorCallback (per-frame defense) and fontObjectCallback (immediate counter).
+        local function reapplyFont(st)
+            local cfg = db[key]
+            if type(cfg) ~= "table" then return end
+            local face = addon.ResolveFontFace and addon.ResolveFontFace(cfg.fontFace or "FRIZQT__") or defaultFace
+            local size = tonumber(cfg.size) or 16
+            local style = cfg.style or "OUTLINE"
+            if addon.ApplyFontStyle then
+                pcall(addon.ApplyFontStyle, fs, face, size, style)
+            else
+                pcall(fs.SetFont, fs, face, size, style)
+            end
+            st.lastFontKey = face .. "|" .. size .. "|" .. style
+        end
+
         -- OPT-26: Split callbacks — colorCallback for color hooks, fontObjectCallback invalidates caches
         local colorCallback = function()
             local st = auraState[fs]
             if not st or st.colorApplying then return end
             enforceTextColor(fs, key, st)
+            -- Per-frame font defense: if font cache was invalidated (by SetFontObject
+            -- or a failed styling pass), re-apply font. This fires every frame for
+            -- duration text (via Blizzard's UpdateDuration -> SetVertexColor), providing
+            -- per-frame defense at minimal cost (just a nil check when healthy).
+            if st.lastFontKey == nil then
+                reapplyFont(st)
+            end
+            -- Per-frame draw layer defense: if PCALL 4 failed to set draw layer,
+            -- the FontString stays at its XML default (BACKGROUND), rendering behind
+            -- the OVERLAY-layer debuff border overlay. Fix it here within one frame.
+            -- Cost when healthy: one nil check (lastDrawLayer is set by applyAuraText).
+            if not st.lastDrawLayer then
+                pcall(fs.SetDrawLayer, fs, "OVERLAY", 10)
+                st.lastDrawLayer = true
+            end
         end
 
         local fontObjectCallback = function()
@@ -194,6 +225,7 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
             if not st then return end
             -- SetFontObject resets font face, size, style, and may reset color — invalidate all caches
             st.lastFontKey = nil
+            st.lastDrawLayer = nil
             st.lastColorR = nil
             st.lastColorG = nil
             st.lastColorB = nil
@@ -201,6 +233,8 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
             st.lastAnchorPt = nil
             if st.colorApplying then return end
             enforceTextColor(fs, key, st)
+            -- Immediately re-apply Scoot's font to counter SetFontObject reset
+            reapplyFont(st)
         end
 
         if type(fs.SetTextColor) == "function" then hooksecurefunc(fs, "SetTextColor", colorCallback) end
@@ -249,7 +283,10 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         if not state or state.lastFontKey ~= fontKey then
             pcall(fs.SetDrawLayer, fs, "OVERLAY", 10)
             if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, style) else fs:SetFont(face, size, style) end
-            if state then state.lastFontKey = fontKey end
+            if state then
+                state.lastFontKey = fontKey
+                state.lastDrawLayer = true  -- cache for colorCallback per-frame defense
+            end
         end
         -- OPT-26 Change 2: Color cache — skip SetTextColor when color values unchanged
         local color = cfg.color
@@ -448,13 +485,20 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         for _, aura in ipairs(collection) do
             if aura and not processed[aura] then
                 processed[aura] = true
-                pcall(function()
+                -- Shared preamble (safe reads, no pcall needed)
                 local icon = aura.Icon or aura.icon or aura.IconTexture
 
                 -- OPT-01: Skip auras already styled for the current config version
                 local auraVState = getState(aura)
                 if forceRestyle or not auraVState or auraVState.lastStyledVersion ~= currentVersion then
 
+                    -- Track pcall results: only version-stamp when ALL succeed.
+                    -- Failed buttons get re-attempted on next pass (forceRestyle or version mismatch).
+                    local ok1, ok2, ok3, ok4
+
+                    -- PCALL 1: Icon sizing + TexCoord
+                    -- Independent so a failure here doesn't block borders, overlays, or text.
+                    ok1 = pcall(function()
                     if icon and icon.SetSize and width and height then
                         icon:SetSize(width, height)
                         -- Calculate texture coordinates to crop instead of stretch
@@ -477,6 +521,11 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                             pcall(icon.SetTexCoord, icon, left, right, top, bottom)
                         end
                     end
+                    end) -- pcall 1: icon sizing
+
+                    -- PCALL 2: Border handling
+                    -- Independent so a border failure doesn't block overlays or text.
+                    ok2 = pcall(function()
                     if icon then
                         -- OPT-01 Opt3: Border param cache — skip ApplyIconBorderStyle when params match
                         if borderEnabled then
@@ -542,9 +591,12 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                             if iconState then iconState.lastBorder = nil end
                         end
                     end
+                    end) -- pcall 2: border handling
 
-                    -- Debuff/TempEnchant border overlay management
-                    -- Runs after the border section to have final say on border visibility
+                    -- PCALL 3: Debuff/TempEnchant border overlay management
+                    -- Independent so an overlay failure doesn't block text styling.
+                    -- Runs after the border section to have final say on border visibility.
+                    ok3 = pcall(function()
                     if componentId == "debuffs" and icon then
                         local auraSt = getState(aura)
                         -- Skip private aura anchors — borders managed by game client
@@ -659,7 +711,11 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                             if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
                         end
                     end
+                    end) -- pcall 3: debuff overlay management
 
+                    -- PCALL 4: Text styling (stacks + duration)
+                    -- Independent so a failure in icon/border/overlay code doesn't prevent text styling.
+                    ok4 = pcall(function()
                     local stacksFS = aura.Count or aura.count or aura.Applications
                     if stacksFS and stacksFS.GetObjectType and stacksFS:GetObjectType() == "FontString" then
                         applyAuraText(stacksFS, "textStacks", 16, aura)
@@ -669,13 +725,17 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                     if durationFS and durationFS.GetObjectType and durationFS:GetObjectType() == "FontString" then
                         applyAuraText(durationFS, "textDuration", 16, aura)
                     end
+                    end) -- pcall 4: text styling
 
-                    if auraVState then
+                    -- Version stamp: only mark styled when ALL pcalls succeeded.
+                    -- Failed buttons keep stale version, ensuring re-attempt on next
+                    -- forceRestyle=false pass. The post-loop safety nets provide
+                    -- immediate recovery for the current pass.
+                    if auraVState and ok1 and ok2 and ok3 and ok4 then
                         auraVState.lastStyledVersion = currentVersion
                     end
 
                 end -- version check
-                end) -- pcall per-aura
             end
         end
     end
@@ -732,7 +792,10 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                         auraSt._tebShowHooked = true
                     end
 
-                    -- Ensure overlay texture exists (may have been missed by main loop)
+                    -- Ensure overlay texture exists and is correctly configured.
+                    -- Always call ensure + update unconditionally (ensure is a no-op when
+                    -- overlay already exists). Also hide stale alternate overlay type to
+                    -- handle debuff<->tempenchant type switches on recycled buttons.
                     local isTempEnchant = false
                     local okType, aType = pcall(function() return aura.auraType end)
                     if okType and aType and not issecretvalue(aType) and aType == "TempEnchant" then
@@ -740,28 +803,43 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                     end
 
                     if isTempEnchant then
-                        if not auraSt.tempEnchantBorderOverlay then
-                            ensureOverlayTexture(aura, "tempEnchantBorderOverlay", "OVERLAY", 1)
-                        end
-                        if auraSt.tempEnchantBorderOverlay then
-                            local okS, shown = pcall(auraSt.tempEnchantBorderOverlay.IsShown, auraSt.tempEnchantBorderOverlay)
-                            if okS and not shown then
-                                updateTempEnchantBorderOverlay(aura, auraSt, width, height)
-                            end
-                        end
+                        ensureOverlayTexture(aura, "tempEnchantBorderOverlay", "OVERLAY", 1)
+                        updateTempEnchantBorderOverlay(aura, auraSt, width, height)
+                        if auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
                     else
-                        if not auraSt.debuffBorderOverlay then
-                            ensureOverlayTexture(aura, "debuffBorderOverlay", "OVERLAY", 1)
-                        end
-                        if auraSt.debuffBorderOverlay then
-                            local okS, shown = pcall(auraSt.debuffBorderOverlay.IsShown, auraSt.debuffBorderOverlay)
-                            if okS and not shown then
-                                updateDebuffBorderOverlay(aura, auraSt, width, height)
-                            end
-                        end
+                        ensureOverlayTexture(aura, "debuffBorderOverlay", "OVERLAY", 1)
+                        updateDebuffBorderOverlay(aura, auraSt, width, height)
+                        if auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
                     end
                 end)
             end
+        end
+    end
+
+    -- Post-loop text safety net.
+    -- Runs OUTSIDE the per-aura pcalls so it executes even if PCALL 4 failed
+    -- for specific buttons. Always re-applies text styling unconditionally —
+    -- OPT-26 caching inside applyAuraText makes redundant calls cheap
+    -- (~6 comparisons per FontString when already styled correctly).
+    -- Previous bug: textHooked guard skipped buttons where hooks existed from
+    -- a prior pass but PCALL 4 failed, leaving SetDrawLayer/font/color unapplied.
+    for _, collection in ipairs(auraCollections) do
+        for _, aura in ipairs(collection) do
+            pcall(function()
+                if not aura then return end
+
+                -- Stacks FontString
+                local stacksFS = aura.Count or aura.count or aura.Applications
+                if stacksFS and stacksFS.GetObjectType and stacksFS:GetObjectType() == "FontString" then
+                    applyAuraText(stacksFS, "textStacks", 16, aura)
+                end
+
+                -- Duration FontString
+                local durationFS = aura.Duration
+                if durationFS and durationFS.GetObjectType and durationFS:GetObjectType() == "FontString" then
+                    applyAuraText(durationFS, "textDuration", 16, aura)
+                end
+            end)
         end
     end
 end
