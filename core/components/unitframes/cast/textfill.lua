@@ -847,6 +847,9 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 				-- (GetText may return secrets on tainted target/boss frames)
 				if type(text) == "string" and not (issecretvalue and issecretvalue(text)) then
 					setProp(frame, "textFillCapturedText", text)
+				elseif issecretvalue and issecretvalue(text) then
+					-- Clear stale cache so syncTextFillText falls through to secret passthrough
+					setProp(frame, "textFillCapturedText", nil)
 				end
 				local els = getProp(frame, "textFillElements")
 				if els and els.filledText and els.clipFrame:IsShown() then
@@ -855,6 +858,10 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 					-- Setting raw text here creates a brief mismatch that can cause
 					-- kerning differences around thin characters like apostrophes.
 					if not getProp(frame, "textFillGradientActive") then
+						els.filledText:SetText(text)
+					elseif issecretvalue and issecretvalue(text) then
+						-- Gradient mode + secret: can't apply gradient to secrets, but
+						-- correct plain text is better than stale gradient text
 						els.filledText:SetText(text)
 					end
 				end

@@ -107,7 +107,19 @@ function CB._installGradientHook(spellFS, cfgResolver, parentFrame)
 	if not spellFS or CB._getProp(spellFS, "_rampHooked") then return end
 	hooksecurefunc(spellFS, "SetText", function(self, text)
 		if CB._rampApplying then return end
-		if type(text) ~= "string" or (issecretvalue and issecretvalue(text)) then return end
+		if type(text) ~= "string" then return end
+		if issecretvalue and issecretvalue(text) then
+			-- Clear stale gradient cache so syncTextFillText won't use old text
+			CB._setProp(self, "_rampRawText", nil)
+			-- In text-fill mode, pass secret directly to filledText (SetText is AllowedWhenTainted)
+			if parentFrame and CB._getProp(parentFrame, "textFillActive") then
+				local els = CB._getProp(parentFrame, "textFillElements")
+				if els and els.filledText then
+					pcall(els.filledText.SetText, els.filledText, text)
+				end
+			end
+			return
+		end
 		-- Cache the raw (uncolored) text for re-application on settings change
 		CB._setProp(self, "_rampRawText", text)
 		local styleCfg = cfgResolver()
