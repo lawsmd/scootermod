@@ -409,50 +409,52 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
         local colDef = cfg.columns[c]
         if colDef then
             if inCombat then
-                -- Combat: use AbbreviateLargeNumbers (C-side, accepts secrets)
-                -- to format values, including combo formats like "48.2K (1.6M)".
                 local def = DM2.COLUMN_FORMATS[colDef.format]
                 if def then
-                    -- During combat, each combatSource has BOTH totalAmount and
-                    -- amountPerSecond. DM2._UnifiedAbbreviate uses AbbreviateNumbers
-                    -- with custom 1K+ breakpoints to format secret values.
-                    local mt = def.primary or def.meterType
-                    local val = player.values[mt]
-                    if val then
-                        if def.primary then
-                            -- Combo format: abbreviate both, combine via SetFormattedText
-                            local pAbbr = DM2._UnifiedAbbreviate(val[def.primaryField] or 0)
-                            local sAbbr = DM2._UnifiedAbbreviate(val[def.secondaryField] or 0)
-                            local ok = pcall(vt.SetFormattedText, vt, "%s (%s)", pAbbr, sAbbr)
-                            if not ok then
-                                vt:SetText(pAbbr)
+                    if c == 1 then
+                        -- Primary column: use session-level combatSources values
+                        local mt = def.primary or def.meterType
+                        local val = player.values[mt]
+                        if val then
+                            if def.primary then
+                                local pAbbr = DM2._UnifiedAbbreviate(val[def.primaryField] or 0)
+                                local sAbbr = DM2._UnifiedAbbreviate(val[def.secondaryField] or 0)
+                                local ok = pcall(vt.SetFormattedText, vt, "%s (%s)", pAbbr, sAbbr)
+                                if not ok then
+                                    vt:SetText(pAbbr)
+                                end
+                            else
+                                vt:SetText(DM2._UnifiedAbbreviate(val[def.valueField or "totalAmount"] or 0))
                             end
+                        end
+                    else
+                        -- Secondary column: use stored-GUID source query data
+                        local secData = merged.secondaryByIdentity
+                        local mt = def.primary or def.meterType
+                        local idLookup = secData and player.identityKey and secData[player.identityKey]
+                        local secTotal = idLookup and idLookup[mt]
+
+                        if secTotal then
+                            vt:SetText(DM2._UnifiedAbbreviate(secTotal))
                         else
-                            -- Single format
-                            vt:SetText(DM2._UnifiedAbbreviate(val[def.valueField or "totalAmount"] or 0))
+                            vt:SetText("\226\128\148") -- em dash
                         end
                     end
-                end
-
-                -- Gray out secondary columns during combat (data is stale/uncorrelated)
-                if c > 1 then
-                    vt:SetTextColor(0.5, 0.5, 0.5, 0.7)
-                    vt:SetAlpha(0.5)
                 end
             else
                 -- OOC: formatted text
                 vt:SetText(DM2._FormatColumnValue(player, colDef.format))
+            end
 
-                -- Restore value text color and opacity from DB settings (undo combat gray-out)
-                vt:SetAlpha(1)
-                local valSettings = db and db.textValues or {}
-                local valColorMode = valSettings.colorMode or "default"
-                if valColorMode == "custom" and valSettings.color then
-                    local vc = valSettings.color
-                    vt:SetTextColor(vc[1] or 1, vc[2] or 1, vc[3] or 1, vc[4] or 1)
-                else
-                    vt:SetTextColor(1, 1, 1, 1)
-                end
+            -- Apply value text color and opacity (same for combat and OOC)
+            vt:SetAlpha(1)
+            local valSettings = db and db.textValues or {}
+            local valColorMode = valSettings.colorMode or "default"
+            if valColorMode == "custom" and valSettings.color then
+                local vc = valSettings.color
+                vt:SetTextColor(vc[1] or 1, vc[2] or 1, vc[3] or 1, vc[4] or 1)
+            else
+                vt:SetTextColor(1, 1, 1, 1)
             end
         end
     end

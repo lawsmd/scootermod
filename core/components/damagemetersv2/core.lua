@@ -89,6 +89,25 @@ function DM2._GetWindowConfig(windowIndex)
     return wins and wins[windowIndex]
 end
 
+--- Migrate excluded formats (DPS/HPS/combos) in secondary columns to totalAmount equivalents.
+function DM2._MigrateSecondaryColumns()
+    local migMap = DM2.SECONDARY_MIGRATION_MAP
+    if not migMap then return end
+    local wins = DM2._EnsureWindowsDB()
+    if not wins then return end
+    for i = 1, DM2.MAX_WINDOWS do
+        local cfg = wins[i]
+        if cfg and cfg.columns then
+            for c = 2, #cfg.columns do
+                local col = cfg.columns[c]
+                if col and migMap[col.format] then
+                    col.format = migMap[col.format]
+                end
+            end
+        end
+    end
+end
+
 --------------------------------------------------------------------------------
 -- Component Registration
 --------------------------------------------------------------------------------
@@ -314,6 +333,9 @@ function DM2._Initialize(comp)
     DM2._initialized = true
 
     DM2._EnsureWindowsDB()
+
+    -- Migrate excluded formats in secondary columns to totalAmount equivalents
+    DM2._MigrateSecondaryColumns()
 
     -- Create all window frames
     for i = 1, DM2.MAX_WINDOWS do

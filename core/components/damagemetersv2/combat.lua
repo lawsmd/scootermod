@@ -14,14 +14,6 @@ function DM2._EnterCombatMode()
         local win = DM2._windows[i]
         if win and win.mergedData then
             win._preCombatDuration = win.mergedData.durationSeconds or 0
-            win.cachedSecondary = win.mergedData
-        end
-        -- Dim secondary column headers to signal stale data
-        if win then
-            for c = 2, DM2.MAX_COLUMNS do
-                local ch = win.columnHeaders[c]
-                if ch then ch:SetTextColor(0.5, 0.5, 0.5, 0.7); ch:SetAlpha(0.5) end
-            end
         end
     end
 end
@@ -33,7 +25,7 @@ function DM2._ExitCombatMode()
 end
 
 --------------------------------------------------------------------------------
--- Combat Update — Primary column only, secret values
+-- Combat Update — Primary column + live secondary via stored-GUID source queries
 --------------------------------------------------------------------------------
 
 function DM2._UpdateWindowCombat(windowIndex)
@@ -46,11 +38,11 @@ function DM2._UpdateWindowCombat(windowIndex)
     local comp = DM2._comp
     if not comp then return end
 
-    -- Query merged data in combat mode (primary column only for type-based sessions)
+    -- Query merged data in combat mode (primary + secondary via stored-GUID bypass)
     local merged = DM2._QueryMergedData(cfg.sessionType, cfg.sessionID, cfg.columns, true)
     if not merged then return end
 
-    -- Store combat merged data (primary column only)
+    -- Store combat merged data
     win.mergedData = merged
 
     -- Refresh the bar rows display
@@ -85,7 +77,6 @@ function DM2._UpdateWindowOOC(windowIndex)
     end
 
     win.mergedData = merged
-    win.cachedSecondary = nil -- stale cache cleared on fresh data
 
     -- Refresh display
     DM2._RefreshBarRows(windowIndex, comp)
@@ -99,7 +90,7 @@ end
 function DM2._FullRefreshAllWindows()
     if not DM2._initialized then return end
 
-    -- Restore secondary column header colors (dimmed during combat)
+    -- Ensure column header colors match DB settings
     local db = DM2._comp and DM2._comp.db
     if db then
         local headerStyle = db.textHeaders or {}
@@ -282,7 +273,6 @@ function DM2._HandleReset()
         local win = DM2._windows[i]
         if win then
             win.mergedData = nil
-            win.cachedSecondary = nil
             win.scrollOffset = 0
             win._preCombatDuration = 0
             if DM2._comp then

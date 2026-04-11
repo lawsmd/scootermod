@@ -44,36 +44,55 @@ local function CountDeathsPerGUID(deathSession)
 end
 
 --------------------------------------------------------------------------------
+-- GUID Cache + Identity Lookup
+--
+-- Populated during OOC queries, used during combat for secondary column data.
+-- The source-level API (GetCombatSessionSourceFromType) accepts pre-stored
+-- non-secret GUIDs during combat, enabling live secondary column values.
+--------------------------------------------------------------------------------
+
+DM2._guidCache = {}       -- { [guid] = { classFilename, specIconID, isLocalPlayer } }
+DM2._identityToGUID = {}  -- { [identityKey] = guid or false (false = collision) }
+
+local function BuildIdentityKey(classFilename, specIconID, isLocalPlayer)
+    return (classFilename or "UNKNOWN") .. "_" .. tostring(specIconID or 0) .. "_" .. tostring(isLocalPlayer)
+end
+
+--------------------------------------------------------------------------------
 -- QueryMergedData — Core data pipeline
 --
 -- Returns a merged table with all players and their values across all columns.
--- During combat (inCombat=true), only the primary column's meter type is queried.
--- Out of combat, all columns are GUID-correlated.
+-- During combat, primary column uses session-level combatSources (engine-sorted).
+-- Secondary columns use stored-GUID source queries for live data.
+-- Out of combat, all columns are GUID-correlated via session-level lookups.
 --------------------------------------------------------------------------------
 
 function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
     if not C_DamageMeter then return nil end
-    -- Need at least one query API
     if not C_DamageMeter.GetCombatSessionFromType and not C_DamageMeter.GetCombatSessionFromID then
         return nil
     end
     if not columns or #columns == 0 then return nil end
 
     local FORMATS = DM2.COLUMN_FORMATS
+    local EXCLUDED = DM2.SECONDARY_EXCLUDED_FORMATS
 
-    -- Determine which meter types are needed
+    -- Determine which meter types are needed for the primary column
+    local primaryDef = FORMATS[columns[1].format]
+    if not primaryDef then return nil end
+    local primaryType = primaryDef.primary or primaryDef.meterType
+
+    -- Determine all needed meter types
     local neededTypes
     if inCombat then
-        -- Combat: only primary column (all APIs return secret values during combat)
-        local def = FORMATS[columns[1].format]
-        if not def then return nil end
+        -- Combat: session-level query for primary column only
         neededTypes = {}
-        neededTypes[def.primary or def.meterType] = true
+        neededTypes[primaryType] = true
     else
         neededTypes = DM2._GetNeededMeterTypes(columns)
     end
 
-    -- Query each meter type (ID-based for specific segments, type-based for Overall/Current)
+    -- Query each meter type via session-level API
     local sessions = {}
     for meterType in pairs(neededTypes) do
         local ok, result
@@ -88,9 +107,6 @@ function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
     end
 
     -- Get primary session
-    local primaryDef = FORMATS[columns[1].format]
-    if not primaryDef then return nil end
-    local primaryType = primaryDef.primary or primaryDef.meterType
     local primarySession = sessions[primaryType]
     if not primarySession or not primarySession.combatSources or #primarySession.combatSources == 0 then
         return nil
@@ -115,6 +131,81 @@ function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
                 end
             end
         end
+
+        -- Populate GUID cache + identity lookup from primary session
+        DM2._guidCache = {}
+        DM2._identityToGUID = {}
+        for _, source in ipairs(primarySession.combatSources) do
+            if source.sourceGUID then
+                local ikey = BuildIdentityKey(source.classFilename, source.specIconID, source.isLocalPlayer)
+                DM2._guidCache[source.sourceGUID] = {
+                    classFilename = source.classFilename,
+                    specIconID = source.specIconID,
+                    isLocalPlayer = source.isLocalPlayer,
+                }
+                if DM2._identityToGUID[ikey] == nil then
+                    DM2._identityToGUID[ikey] = source.sourceGUID
+                else
+                    DM2._identityToGUID[ikey] = false -- collision: same class+spec
+                end
+            end
+        end
+    end
+
+    -- Combat: determine secondary meter types needed and query via source API
+    local secondaryByIdentity  -- { [identityKey] = { [meterType] = totalAmount } }
+    if inCombat and next(DM2._guidCache) then
+        -- Collect secondary meter types from non-primary, non-excluded columns
+        local secondaryTypes = {}
+        for c = 2, #columns do
+            local colDef = columns[c]
+            if colDef and not EXCLUDED[colDef.format] then
+                local def = FORMATS[colDef.format]
+                if def then
+                    local mt = def.primary or def.meterType
+                    if mt ~= primaryType then
+                        secondaryTypes[mt] = true
+                    end
+                end
+            end
+        end
+
+        if next(secondaryTypes) then
+            secondaryByIdentity = {}
+
+            -- Query session-level for maxAmounts of secondary types
+            for mt in pairs(secondaryTypes) do
+                local ok, result
+                if sessionID then
+                    ok, result = pcall(C_DamageMeter.GetCombatSessionFromID, sessionID, mt)
+                else
+                    ok, result = pcall(C_DamageMeter.GetCombatSessionFromType, sessionType, mt)
+                end
+                if ok and result then
+                    sessions[mt] = result
+                end
+            end
+
+            -- Query source-level API per cached GUID per secondary meter type
+            for guid, info in pairs(DM2._guidCache) do
+                local ikey = BuildIdentityKey(info.classFilename, info.specIconID, info.isLocalPlayer)
+                -- Skip collision keys
+                if DM2._identityToGUID[ikey] ~= false then
+                    if not secondaryByIdentity[ikey] then
+                        secondaryByIdentity[ikey] = {}
+                    end
+                    for mt in pairs(secondaryTypes) do
+                        local ok, srcResult = pcall(
+                            C_DamageMeter.GetCombatSessionSourceFromType,
+                            sessionType, mt, guid, nil
+                        )
+                        if ok and srcResult then
+                            secondaryByIdentity[ikey][mt] = srcResult.totalAmount
+                        end
+                    end
+                end
+            end
+        end
     end
 
     -- Build merged table
@@ -122,6 +213,7 @@ function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
         playerOrder = {},
         players = {},
         maxAmounts = {},
+        secondaryByIdentity = secondaryByIdentity,  -- nil when OOC (not needed)
         durationSeconds = primarySession.durationSeconds,
         sessionType = sessionType,
     }
@@ -145,11 +237,15 @@ function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
 
             table.insert(merged.playerOrder, key)
 
+            -- Build identity key from NeverSecret fields (works in combat)
+            local identityKey = BuildIdentityKey(source.classFilename, source.specIconID, source.isLocalPlayer)
+
             local player = {
                 name = source.name,                   -- secret in combat
                 classFilename = source.classFilename, -- NeverSecret
                 specIconID = source.specIconID,        -- NeverSecret (may be nil)
                 isLocalPlayer = source.isLocalPlayer,  -- NeverSecret
+                identityKey = identityKey,             -- for combat secondary lookup
                 rank = rank,
                 values = {},
             }

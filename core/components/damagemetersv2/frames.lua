@@ -483,7 +483,8 @@ function DM2._CreateWindow(windowIndex, comp)
             if gi > 1 then columnMenu:AddDivider() end
             for _, key in ipairs(group.keys) do
                 local def = DM2.COLUMN_FORMATS[key]
-                if def then
+                -- Exclude amountPerSecond-based formats from secondary columns
+                if def and (colIdx == 1 or not DM2.SECONDARY_EXCLUDED_FORMATS[key]) then
                     columnMenu:AddRow(def.headerText, { 1, 1, 1, 0.9 }, function()
                         cfg.columns[colIdx].format = key
                         local c = DM2._comp
@@ -784,7 +785,6 @@ function DM2._CreateWindow(windowIndex, comp)
         pinnedSeparator = pinnedSeparator,
         scrollOffset = 0,
         mergedData = nil,
-        cachedSecondary = nil,
         lastUpdateTime = 0,
     }
 end

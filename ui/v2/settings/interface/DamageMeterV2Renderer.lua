@@ -173,13 +173,16 @@ local function CreatePreviewPane(parentFrame, comp, windowIndex, builder)
                 table.insert(dropOrder, "_remove")
             end
             for _, key in ipairs(metricOrder) do
-                dropValues[key] = metricValues[key]
-                table.insert(dropOrder, key)
+                -- Exclude amountPerSecond-based formats from secondary columns
+                if c == 1 or not (DM2 and DM2.SECONDARY_EXCLUDED_FORMATS and DM2.SECONDARY_EXCLUDED_FORMATS[key]) then
+                    dropValues[key] = metricValues[key]
+                    table.insert(dropOrder, key)
+                end
             end
 
             local colIdx = c -- capture for closure
             local isPrimary = (c == 1)
-            local dropWidth = math.max(110, colWidth - 4)
+            local dropWidth = math.max(60, colWidth - 4)
 
             local colDropdown = Controls:CreateDropdown({
                 parent = container,
@@ -200,15 +203,6 @@ local function CreatePreviewPane(parentFrame, comp, windowIndex, builder)
 
             local rightEdge = containerWidth - PREVIEW_PADDING - (numColumns - c) * colWidth
             colDropdown:SetPoint("TOPRIGHT", container, "TOPLEFT", rightEdge, -4)
-
-            -- Primary column indicator: accent-colored underline
-            if isPrimary then
-                local accent = container:CreateTexture(nil, "ARTWORK")
-                accent:SetHeight(2)
-                accent:SetPoint("TOPLEFT", colDropdown, "BOTTOMLEFT", 0, 0)
-                accent:SetPoint("TOPRIGHT", colDropdown, "BOTTOMRIGHT", 0, 0)
-                accent:SetColorTexture(ar, ag, ab, 0.6)
-            end
         end
     end
 
@@ -574,22 +568,6 @@ function DMV2Settings.Render(panel, scrollContent)
     ws:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -12, -8)
     table.insert(builder._controls, ws)
     builder._currentY = -8 - 28 - 8
-
-    -- Multi-column disclaimer
-    local disclaimerFrame = CreateFrame("Frame", nil, scrollContent)
-    disclaimerFrame:SetHeight(28)
-    disclaimerFrame:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 12, builder._currentY)
-    disclaimerFrame:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -12, builder._currentY)
-    local disclaimerText = disclaimerFrame:CreateFontString(nil, "OVERLAY")
-    disclaimerText:SetFont(ResolveFont(), 10, "")
-    disclaimerText:SetPoint("TOPLEFT", disclaimerFrame, "TOPLEFT", 4, -4)
-    disclaimerText:SetPoint("TOPRIGHT", disclaimerFrame, "TOPRIGHT", -4, -4)
-    disclaimerText:SetJustifyH("LEFT")
-    disclaimerText:SetTextColor(1.0, 0.82, 0, 1)
-    disclaimerText:SetText("Overall windows can display multiple metrics, but only the first (left-most) column will update proactively. Other metrics will update once combat ends.")
-    disclaimerText:SetWordWrap(true)
-    table.insert(builder._controls, disclaimerFrame)
-    builder._currentY = builder._currentY - 28
 
     -- Preview Pane
     if comp then

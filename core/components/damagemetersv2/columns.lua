@@ -69,3 +69,24 @@ function DM2._GetColumnHeader(formatKey)
     local def = DM2.COLUMN_FORMATS[formatKey]
     return def and def.headerText or "?"
 end
+
+--- Formats excluded from secondary (non-primary) columns.
+--- These use amountPerSecond which the source-level API cannot provide during combat.
+DM2.SECONDARY_EXCLUDED_FORMATS = {
+    dps      = true,
+    hps      = true,
+    dps_dmg  = true,
+    hps_heal = true,
+    dmg_dps  = true,
+    heal_hps = true,
+}
+
+--- Migration map: excluded format → totalAmount equivalent for auto-migration.
+DM2.SECONDARY_MIGRATION_MAP = {
+    dps      = "damage",
+    hps      = "healing",
+    dps_dmg  = "damage",
+    hps_heal = "healing",
+    dmg_dps  = "damage",
+    heal_hps = "healing",
+}

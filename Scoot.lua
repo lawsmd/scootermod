@@ -144,6 +144,8 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("  /scoot debug dmv2 cvar")
             addon:Print("  /scoot debug dmv2 api")
             addon:Print("  /scoot debug dmv2 fields")
+            addon:Print("  /scoot debug dmv2 drilldown")
+            addon:Print("  /scoot debug dmv2 multicol")
             return
         end
 
@@ -436,10 +438,22 @@ function SlashCmdList.SCOOT(msg, editBox)
                 else addon:Print("DMV2 debug not available.") end
                 return
             end
+            if sub2 == "drilldown" then
+                if addon.DebugDMV2Drilldown then addon.DebugDMV2Drilldown()
+                else addon:Print("DMV2 debug not available.") end
+                return
+            end
+            if sub2 == "multicol" then
+                if addon.DebugDMV2Multicol then addon.DebugDMV2Multicol()
+                else addon:Print("DMV2 debug not available.") end
+                return
+            end
             addon:Print("Usage: /scoot debug dmv2 cvar")
             addon:Print("       /scoot debug dmv2 api")
             addon:Print("       /scoot debug dmv2 trace")
             addon:Print("       /scoot debug dmv2 fields")
+            addon:Print("       /scoot debug dmv2 drilldown")
+            addon:Print("       /scoot debug dmv2 multicol")
             return
         end
 
