@@ -281,13 +281,41 @@ function UIPanel:CreateCloseButton()
     end)
 end
 
--- Header Buttons (Edit Mode, Cooldown Manager)
+-- Header Buttons (Features, Search, Edit Mode, Cooldown Manager)
+
+local PULSE_PERIOD = 1.5          -- seconds per full glow cycle
+local PULSE_MIN_ALPHA = 0.3       -- dimmest border alpha during pulse
+local PULSE_TICK = 0.016          -- ~60fps
 
 function UIPanel:CreateHeaderButtons()
     local frame = self.frame
     if not frame then return end
 
     local panel = self
+
+    -- Features button (replaces former "Start Here" nav entry)
+    local featuresBtn = Controls:CreateButton({
+        parent = frame,
+        name = "ScootFeaturesBtn",
+        text = "Features",
+        height = HEADER_BUTTON_HEIGHT,
+        fontSize = 11,
+        onClick = function()
+            Navigation:SelectItem("startHere")
+        end,
+    })
+
+    -- Search button (replaces former "Search" nav entry)
+    local searchBtn = Controls:CreateButton({
+        parent = frame,
+        name = "ScootSearchBtn",
+        text = "Search",
+        height = HEADER_BUTTON_HEIGHT,
+        fontSize = 11,
+        onClick = function()
+            Navigation:SelectItem("search")
+        end,
+    })
 
     -- Edit Mode button
     local editModeBtn = Controls:CreateButton({
@@ -322,10 +350,6 @@ function UIPanel:CreateHeaderButtons()
         setupSecureEditMode()
     end
 
-    -- Only set the guard flag; calling ApplyChanges() here would taint.
-    -- Use HookScript+PostClick (not SetScript+PreClick) to preserve the
-    -- secure handler chain — SetScript on a secure button corrupts the
-    -- frame handle, causing "Invalid 'self' frame handle" on click.
     editModeBtn:HookScript("PostClick", function()
         if addon and addon.EditMode then
             if addon.EditMode.MarkOpeningEditMode then
@@ -345,32 +369,108 @@ function UIPanel:CreateHeaderButtons()
             if addon and addon.OpenCooldownManagerSettings then
                 addon:OpenCooldownManagerSettings()
             end
-            -- Close settings panel
             if panel and panel.frame and panel.frame:IsShown() then
                 panel.frame:Hide()
             end
         end
     })
 
+    -- Position all 4 buttons centered across the top border
+    local headerButtons = { featuresBtn, searchBtn, editModeBtn, cdmBtn }
+
     local function PositionHeaderButtons()
-        local inset = math.floor((frame:GetWidth() or 0) * 0.10)
+        local totalW = 0
+        for _, btn in ipairs(headerButtons) do
+            totalW = totalW + (btn:GetWidth() or 0)
+        end
+        totalW = totalW + (#headerButtons - 1) * HEADER_BUTTON_SPACING
 
-        cdmBtn:ClearAllPoints()
-        cdmBtn:SetPoint("CENTER", frame, "TOPRIGHT", -inset - (cdmBtn:GetWidth() / 2), 0)
-
-        editModeBtn:ClearAllPoints()
-        editModeBtn:SetPoint("RIGHT", cdmBtn, "LEFT", -HEADER_BUTTON_SPACING, 0)
+        local startX = -(totalW / 2)
+        for _, btn in ipairs(headerButtons) do
+            btn:ClearAllPoints()
+            local btnW = btn:GetWidth() or 0
+            btn:SetPoint("CENTER", frame, "TOP", startX + (btnW / 2), 0)
+            startX = startX + btnW + HEADER_BUTTON_SPACING
+        end
     end
 
     PositionHeaderButtons()
-
     frame:HookScript("OnSizeChanged", PositionHeaderButtons)
 
-    editModeBtn:SetFrameLevel(frame:GetFrameLevel() + 15)
-    cdmBtn:SetFrameLevel(frame:GetFrameLevel() + 15)
+    local btnLevel = frame:GetFrameLevel() + 15
+    for _, btn in ipairs(headerButtons) do
+        btn:SetFrameLevel(btnLevel)
+    end
 
+    frame._featuresBtn = featuresBtn
+    frame._searchBtn = searchBtn
     frame._editModeBtn = editModeBtn
     frame._cdmBtn = cdmBtn
+
+    -- Active state helpers: invert button colors when its page is selected
+    local function SetButtonActive(btn, active)
+        if not btn or not btn._border or not btn._label then return end
+        local ar, ag, ab = Theme:GetAccentColor()
+        local bgR, bgG, bgB, bgA = Theme:GetBackgroundSolidColor()
+        if active then
+            btn._hoverFill:SetColorTexture(ar, ag, ab, 1)
+            btn._hoverFill:Show()
+            btn._label:SetTextColor(bgR, bgG, bgB, 1)
+            btn._isActive = true
+        else
+            btn._hoverFill:Hide()
+            btn._label:SetTextColor(ar, ag, ab, 1)
+            btn._isActive = false
+        end
+    end
+
+    -- Expose active-state setter for OnNavigationSelect to call
+    frame._SetHeaderButtonActive = function(key)
+        SetButtonActive(featuresBtn, key == "startHere")
+        SetButtonActive(searchBtn, key == "search")
+    end
+
+    -- Pulsing glow on Features button when all modules are disabled
+    local function StartFeaturesPulse()
+        if featuresBtn._pulseTicker then return end
+        local elapsed = 0
+        featuresBtn._pulseTicker = C_Timer.NewTicker(PULSE_TICK, function()
+            elapsed = elapsed + PULSE_TICK
+            local phase = (elapsed % PULSE_PERIOD) / PULSE_PERIOD
+            local alpha = PULSE_MIN_ALPHA + (1 - PULSE_MIN_ALPHA) * (0.5 + 0.5 * math.cos(phase * 2 * math.pi))
+            if featuresBtn._border then
+                for _, tex in pairs(featuresBtn._border) do
+                    tex:SetAlpha(alpha)
+                end
+            end
+            if featuresBtn._label then
+                featuresBtn._label:SetAlpha(alpha)
+            end
+        end)
+    end
+
+    local function StopFeaturesPulse()
+        if featuresBtn._pulseTicker then
+            featuresBtn._pulseTicker:Cancel()
+            featuresBtn._pulseTicker = nil
+        end
+        if featuresBtn._border then
+            for _, tex in pairs(featuresBtn._border) do
+                tex:SetAlpha(1)
+            end
+        end
+        if featuresBtn._label then
+            featuresBtn._label:SetAlpha(1)
+        end
+    end
+
+    frame._StartFeaturesPulse = StartFeaturesPulse
+    frame._StopFeaturesPulse = StopFeaturesPulse
+
+    -- Check on creation
+    if addon.AreAllModulesDisabled and addon:AreAllModulesDisabled() then
+        StartFeaturesPulse()
+    end
 end
 
 -- Resize Handle (bottom-right corner grip)
@@ -813,28 +913,28 @@ function UIPanel:CreateContentPane()
     homeContent:SetAllPoints(contentPane)
 
     local homeContainer = CreateFrame("Frame", nil, homeContent)
-    homeContainer:SetPoint("CENTER", homeContent, "CENTER", 0, -10)  -- Slightly below center
+    homeContainer:SetPoint("CENTER", homeContent, "CENTER", 0, 30)  -- Shifted up slightly to make room for Feature Guide
 
     local labelFont2 = Theme:GetFont("LABEL")
 
     local homeAscii = homeContainer:CreateFontString(nil, "OVERLAY")
-    homeAscii:SetFont(labelFont2, 13, "")  -- 30% larger than old 10pt to compensate for shorter "SCOOT" text
+    homeAscii:SetFont(labelFont2, 10, "")  -- Shrunk from 13pt
     homeAscii:SetText(ASCII_LOGO)
-    homeAscii:SetJustifyH("LEFT")  -- LEFT keeps ASCII art internally aligned (CENTER shifts rows with different Unicode char widths)
+    homeAscii:SetJustifyH("LEFT")
     homeAscii:SetTextColor(ar, ag, ab, 1)
     homeAscii:SetPoint("CENTER", homeContainer, "CENTER", 0, 0)
 
     local homeMascot = homeContainer:CreateFontString(nil, "OVERLAY")
-    homeMascot:SetFont(labelFont2, 7.5, "")  -- 25% larger than 6pt
+    homeMascot:SetFont(labelFont2, 6, "")  -- Shrunk from 7.5pt
     homeMascot:SetText(ASCII_MASCOT)
-    homeMascot:SetJustifyH("LEFT")  -- LEFT keeps ASCII art internally aligned
+    homeMascot:SetJustifyH("LEFT")
     homeMascot:SetTextColor(ar, ag, ab, 1)
     local welcomeText = homeContainer:CreateFontString(nil, "OVERLAY")
-    welcomeText:SetFont(labelFont2, 16, "")
+    welcomeText:SetFont(labelFont2, 13, "")  -- Shrunk from 16pt
     welcomeText:SetText("Welcome to")
     welcomeText:SetTextColor(1, 1, 1, 1)
-    homeMascot:SetPoint("BOTTOM", homeAscii, "TOP", 37, 8)  -- Mascot above ASCII art, shifted right
-    welcomeText:SetPoint("BOTTOMRIGHT", homeMascot, "BOTTOMLEFT", 20, 0)  -- "Welcome to" at bottom-left of mascot
+    homeMascot:SetPoint("BOTTOM", homeAscii, "TOP", 37, 8)
+    welcomeText:SetPoint("BOTTOMRIGHT", homeMascot, "BOTTOMLEFT", 20, 0)
 
     C_Timer.After(0.05, function()
         if homeAscii and homeMascot and homeContainer then
@@ -842,10 +942,96 @@ function UIPanel:CreateContentPane()
             local titleH = homeAscii:GetStringHeight() or 80
             local mascotW = homeMascot:GetStringWidth() or 200
             local mascotH = homeMascot:GetStringHeight() or 150
-            homeContainer:SetSize(math.max(titleW, mascotW), titleH + mascotH + 50)
+            homeContainer:SetSize(math.max(titleW, mascotW), titleH + mascotH + 16)
         end
     end)
-    homeContainer:SetSize(450, 300)  -- Fallback
+    homeContainer:SetSize(450, 150)  -- Fallback
+
+    -- Feature Guide section
+    local GUIDE_INSET = 40
+    local GUIDE_ICON_SIZE = 30
+    local GUIDE_ROW_SPACING = 36
+    local GUIDE_TEXT_MAX_WIDTH = 380
+
+    local guideDivider = homeContent:CreateTexture(nil, "BORDER")
+    guideDivider:SetHeight(1)
+    guideDivider:SetPoint("TOPLEFT", homeAscii, "BOTTOMLEFT", -GUIDE_INSET, -10)
+    guideDivider:SetPoint("TOPRIGHT", homeAscii, "BOTTOMRIGHT", GUIDE_INSET, -10)
+    guideDivider:SetColorTexture(ar, ag, ab, 0.3)
+
+    local guideHeader = homeContent:CreateFontString(nil, "OVERLAY")
+    local headerFont = Theme:GetFont("HEADER")
+    guideHeader:SetFont(headerFont, 20, "")
+    guideHeader:SetText("Feature Guide:")
+    guideHeader:SetTextColor(ar, ag, ab, 1)
+    guideHeader:SetPoint("TOP", guideDivider, "BOTTOM", 0, -8)
+
+    local FEATURE_GUIDE = {
+        {
+            letter = "X",
+            color = { 0.2, 0.9, 0.3 },
+            tooltipTitle = "Native",
+            tooltipText = "Scoot's foundation. Customize Blizzard's own frames — fonts, colors, textures, borders — while keeping the originals intact. Zero taint risk, fully compatible with Blizzard's systems.",
+            summary = "Enhance Blizzard's built-in UI with custom fonts, colors, textures, and borders. The original frames stay intact — Scoot just makes them look better.",
+        },
+        {
+            letter = "Y",
+            color = { 1.0, 0.85, 0.1 },
+            tooltipTitle = "Modern",
+            tooltipText = "Custom frames that replace Blizzard's UI entirely. Dense info, smooth bars, full layout control — the competitive addon experience. Zero taint.",
+            summary = "Replace Blizzard's frames with clean, modern alternatives. Dense information, smooth bars, and full layout control — the competitive addon experience.",
+        },
+        {
+            letter = "Z",
+            color = { 0.3, 0.6, 1.0 },
+            tooltipTitle = "Text",
+            tooltipText = "A future direction for the project: a text-powered UI with pixel art, retro fonts, 8-bit icons, and arcade flourishes. A complete visual identity designed from the ground up. No timeline yet.",
+            summary = "A future text-powered UI built on pixel art, retro fonts, and 8-bit icons. An idea for down the road — no timeline yet.",
+        },
+    }
+
+    local guideIcons = {}
+    local guideLabels = {}
+    local prevAnchor = guideHeader
+
+    for i, entry in ipairs(FEATURE_GUIDE) do
+        local icon = Controls:CreateInfoIcon({
+            parent = homeContent,
+            size = GUIDE_ICON_SIZE,
+            customText = entry.letter,
+            colorOverride = entry.color,
+            tooltipTitle = entry.tooltipTitle,
+            tooltipText = entry.tooltipText,
+        })
+        icon:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", i == 1 and 0 or 0, -GUIDE_ROW_SPACING)
+        -- Center the icon under the header for the first row
+        if i == 1 then
+            icon:ClearAllPoints()
+            icon:SetPoint("TOP", guideHeader, "BOTTOM", -(GUIDE_TEXT_MAX_WIDTH / 2) - (GUIDE_ICON_SIZE / 2), -14)
+        else
+            icon:ClearAllPoints()
+            icon:SetPoint("TOPLEFT", guideIcons[i - 1], "BOTTOMLEFT", 0, -GUIDE_ROW_SPACING)
+        end
+
+        local summaryText = homeContent:CreateFontString(nil, "OVERLAY")
+        summaryText:SetFont(labelFont2, 14, "")
+        local cr, cg, cb = entry.color[1], entry.color[2], entry.color[3]
+        summaryText:SetTextColor(cr, cg, cb, 0.55)
+        summaryText:SetText(entry.summary)
+        summaryText:SetJustifyH("LEFT")
+        summaryText:SetWordWrap(true)
+        summaryText:SetWidth(GUIDE_TEXT_MAX_WIDTH)
+        summaryText:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -2)
+
+        guideIcons[i] = icon
+        guideLabels[i] = summaryText
+        prevAnchor = icon
+    end
+
+    homeContent._guideIcons = guideIcons
+    homeContent._guideLabels = guideLabels
+    homeContent._guideDivider = guideDivider
+    homeContent._guideHeader = guideHeader
 
     homeContent._welcomeText = welcomeText
     homeContent._asciiLogo = homeAscii
@@ -855,6 +1041,12 @@ function UIPanel:CreateContentPane()
     Theme:Subscribe("UIPanel_HomeContent", function(r, g, b)
         if homeAscii then
             homeAscii:SetTextColor(r, g, b, 1)
+        end
+        if guideDivider then
+            guideDivider:SetColorTexture(r, g, b, 0.3)
+        end
+        if guideHeader then
+            guideHeader:SetTextColor(r, g, b, 1)
         end
         if homeMascot then
             homeMascot:SetTextColor(r, g, b, 1)

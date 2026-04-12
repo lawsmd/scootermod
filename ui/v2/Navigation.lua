@@ -35,14 +35,8 @@ local TREE_LINE_COLOR_ALPHA = 0.4
 --------------------------------------------------------------------------------
 
 Navigation.NavModel = {
-    {
-        key = "startHere",
-        label = "Start Here",
-    },
-    {
-        key = "search",
-        label = "Search",
-    },
+    -- "Features" and "Search" are now top-bar header buttons (settingspanel/core.lua),
+    -- not NavModel entries. Their renderer keys ("startHere", "search") remain unchanged.
     {
         key = "profiles",
         label = "Profiles",
@@ -69,9 +63,11 @@ Navigation.NavModel = {
         collapsible = true,
         children = {
             { key = "damageMeter", label = "Damage Meters", module = "damageMeter", moduleSubId = "damageMeter",
-                versionBadge = { label = "v1", title = "Blizzard Overlay", text = "Reskins Blizzard's built-in damage meter frames. Heavily customized frames may result in taint errors during raid encounters, use with caution." } },
+                variant = "X",
+                versionBadge = { label = "X", title = "Damage Meters X", text = "Reskins Blizzard's built-in damage meter frames. Heavily customized frames may result in taint errors during raid encounters, use with caution." } },
             { key = "damageMeterV2", label = "Damage Meters", module = "damageMeter", moduleSubId = "damageMeterV2",
-                versionBadge = { label = "v2", title = "Custom Frames", text = "Fully Scoot-owned frames. Zero taint. Multi-column and multi-window support." },
+                variant = "Y",
+                versionBadge = { label = "Y", title = "Damage Meters Y", text = "Custom frames that replace Blizzard's meter entirely. Zero taint. Multi-column and multi-window support." },
                 betaBadge = true },
             { key = "tooltip", label = "Tooltip", module = "tooltip" },
             { key = "objectiveTracker", label = "Objective Tracker", module = "objectiveTracker" },
@@ -593,9 +589,24 @@ function Navigation:BuildRows(contentFrame)
         if parent.collapsible and parent.children then
             local isExpanded = self._expandedSections[parent.key]
 
-            for childIdx, child in ipairs(parent.children) do
+            -- Pre-filter: skip inactive variants for mutuallyExclusive categories
+            local visibleChildren = {}
+            for _, child in ipairs(parent.children) do
+                local catDef = child.module and addon.MODULE_CATEGORIES and addon.MODULE_CATEGORIES[child.module]
+                local isMutuallyExclusive = catDef and catDef.mutuallyExclusive
+                if isMutuallyExclusive then
+                    -- Only show the active variant
+                    if self:IsNavModuleActive(child.module, child.moduleSubId) then
+                        visibleChildren[#visibleChildren + 1] = child
+                    end
+                else
+                    visibleChildren[#visibleChildren + 1] = child
+                end
+            end
+
+            for childIdx, child in ipairs(visibleChildren) do
                 rowIndex = rowIndex + 1
-                local isLastChild = (childIdx == #parent.children)
+                local isLastChild = (childIdx == #visibleChildren)
                 local isModuleDisabled = child.module and not self:IsNavModuleActive(child.module, child.moduleSubId)
                 local childRow = self:CreateChildRow(
                     contentFrame,
@@ -603,7 +614,7 @@ function Navigation:BuildRows(contentFrame)
                     yOffset,
                     isLastChild,
                     isExpanded,
-                    #parent.children,
+                    #visibleChildren,
                     childIdx,
                     isModuleDisabled
                 )
@@ -700,7 +711,7 @@ function Navigation:CreateParentRow(parent, navItem, yOffset, isModuleDisabled)
             local C = addon.UI and addon.UI.Controls
             if C and C.GetOrCreateTooltip then
                 local tip = C:GetOrCreateTooltip()
-                tip:SetContent("Module Disabled", "Enable this module on the Start Here page to access its settings.")
+                tip:SetContent("Module Disabled", "Enable this module on the Features page to access its settings.")
                 tip:ShowAtAnchor(self, "TOPLEFT", "TOPRIGHT", 8, 0)
             end
         end)
@@ -814,18 +825,29 @@ function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisi
     label:SetText(navItem.label)
     row._label = label
 
-    -- Version badge info icon (e.g., "v1" / "v2")
+    -- Version badge info icon (e.g., "X" / "Y" with variant color)
     if navItem.versionBadge and addon.UI and addon.UI.Controls and addon.UI.Controls.CreateInfoIcon then
+        -- Use variant color if available (X=green, Y=yellow, Z=blue)
+        local badgeColor = nil
+        if navItem.variant and addon.VARIANT_COLORS and addon.VARIANT_COLORS[navItem.variant] then
+            badgeColor = addon.VARIANT_COLORS[navItem.variant]
+        end
+
+        -- For mutually exclusive entries, append switch instructions to tooltip
+        local catDef = navItem.module and addon.MODULE_CATEGORIES and addon.MODULE_CATEGORIES[navItem.module]
+        local tooltipSuffix = (catDef and catDef.mutuallyExclusive) and "\n\nSwitch variants on the Features page." or ""
+
         row._versionBadge = addon.UI.Controls:CreateInfoIcon({
             parent = row,
             tooltipTitle = navItem.versionBadge.title or "",
-            tooltipText = navItem.versionBadge.text or "",
+            tooltipText = (navItem.versionBadge.text or "") .. tooltipSuffix,
             size = 18,
             iconType = "info",
+            customText = navItem.versionBadge.label or "",
+            colorOverride = badgeColor,
         })
-        -- Override the icon text to show the badge label instead of "i"
+        -- Adjust font size for badge label
         if row._versionBadge._iconText then
-            row._versionBadge._iconText:SetText(navItem.versionBadge.label or "")
             local fontPath = row._versionBadge._iconText:GetFont()
             if fontPath then
                 pcall(row._versionBadge._iconText.SetFont, row._versionBadge._iconText, fontPath, 8, "OUTLINE")
@@ -877,7 +899,7 @@ function Navigation:CreateChildRow(parent, navItem, yOffset, isLastChild, isVisi
             local C = addon.UI and addon.UI.Controls
             if C and C.GetOrCreateTooltip then
                 local tip = C:GetOrCreateTooltip()
-                tip:SetContent("Module Disabled", "Enable this module on the Start Here page to access its settings.")
+                tip:SetContent("Module Disabled", "Enable this module on the Features page to access its settings.")
                 tip:ShowAtAnchor(self, "TOPLEFT", "TOPRIGHT", 8, 0)
             end
         end)

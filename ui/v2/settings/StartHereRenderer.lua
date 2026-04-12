@@ -1,4 +1,4 @@
--- StartHereRenderer.lua - Module toggles page ("Start Here")
+-- StartHereRenderer.lua - Module toggles page ("Features")
 -- Three-column flat layout with always-visible sub-toggles.
 -- Static RELOAD button below the scrollable area inverts when changes are pending.
 local _, addon = ...
@@ -39,6 +39,9 @@ end
 
 --- Compute the display row count for a category (header + sub-toggle rows).
 local function CategoryRowCount(catDef)
+    if catDef.mutuallyExclusive then
+        return 1  -- single row with variant selector
+    end
     if catDef.subToggles and #catDef.subToggles > 0 then
         return 1 + #catDef.subToggles  -- header row + one row per sub-toggle
     end
@@ -88,7 +91,7 @@ local function ComputeColumnSplits(categories, numCols)
 end
 
 --------------------------------------------------------------------------------
--- Page State (lives for the duration of a single Start Here visit)
+-- Page State (lives for the duration of a single Features page visit)
 --------------------------------------------------------------------------------
 
 local pageState = {
@@ -159,14 +162,20 @@ local function CreateIndicator(parent, theme)
     text:SetTextColor(dimR, dimG, dimB, 1)
     indicator._text = text
 
-    function indicator:UpdateState(isOn)
+    function indicator:UpdateState(isOn, variantColor)
         local r, g, b = theme:GetAccentColor()
         local dR, dG, dB = theme:GetDimTextColor()
+        -- Use variant color (X/Y/Z) when ON and available
+        local onR, onG, onB = r, g, b
+        if variantColor then
+            onR, onG, onB = variantColor[1], variantColor[2], variantColor[3]
+        end
         if isOn then
+            self._fill:SetColorTexture(onR, onG, onB, 1)
             self._fill:Show()
             self._text:SetText("ON")
             self._text:SetTextColor(0, 0, 0, 1)
-            for _, tex in pairs(self._border) do tex:SetColorTexture(r, g, b, 1) end
+            for _, tex in pairs(self._border) do tex:SetColorTexture(onR, onG, onB, 1) end
         else
             self._fill:Hide()
             self._text:SetText("OFF")
@@ -176,6 +185,165 @@ local function CreateIndicator(parent, theme)
     end
 
     return indicator
+end
+
+--------------------------------------------------------------------------------
+-- Variant Selector (compact cycling selector for mutuallyExclusive categories)
+--------------------------------------------------------------------------------
+
+local function CreateVariantSelector(parent, theme, subToggles)
+    local ar, ag, ab = theme:GetAccentColor()
+    local dimR, dimG, dimB = theme:GetDimTextColor()
+
+    local selector = CreateFrame("Button", nil, parent)
+    selector:SetSize(INDICATOR_WIDTH, INDICATOR_HEIGHT)
+    selector:RegisterForClicks("AnyUp")
+
+    -- Border textures (same pattern as CreateIndicator)
+    local border = {}
+
+    local top = selector:CreateTexture(nil, "BORDER", nil, -1)
+    top:SetPoint("TOPLEFT", 0, 0)
+    top:SetPoint("TOPRIGHT", 0, 0)
+    top:SetHeight(INDICATOR_BORDER)
+    top:SetColorTexture(ar, ag, ab, 0.4)
+    border.TOP = top
+
+    local bottom = selector:CreateTexture(nil, "BORDER", nil, -1)
+    bottom:SetPoint("BOTTOMLEFT", 0, 0)
+    bottom:SetPoint("BOTTOMRIGHT", 0, 0)
+    bottom:SetHeight(INDICATOR_BORDER)
+    bottom:SetColorTexture(ar, ag, ab, 0.4)
+    border.BOTTOM = bottom
+
+    local left = selector:CreateTexture(nil, "BORDER", nil, -1)
+    left:SetPoint("TOPLEFT", 0, -INDICATOR_BORDER)
+    left:SetPoint("BOTTOMLEFT", 0, INDICATOR_BORDER)
+    left:SetWidth(INDICATOR_BORDER)
+    left:SetColorTexture(ar, ag, ab, 0.4)
+    border.LEFT = left
+
+    local right = selector:CreateTexture(nil, "BORDER", nil, -1)
+    right:SetPoint("TOPRIGHT", 0, -INDICATOR_BORDER)
+    right:SetPoint("BOTTOMRIGHT", 0, INDICATOR_BORDER)
+    right:SetWidth(INDICATOR_BORDER)
+    right:SetColorTexture(ar, ag, ab, 0.4)
+    border.RIGHT = right
+
+    selector._border = border
+
+    -- Fill background
+    local fill = selector:CreateTexture(nil, "BACKGROUND", nil, -7)
+    fill:SetPoint("TOPLEFT", INDICATOR_BORDER, -INDICATOR_BORDER)
+    fill:SetPoint("BOTTOMRIGHT", -INDICATOR_BORDER, INDICATOR_BORDER)
+    fill:Hide()
+    selector._fill = fill
+
+    -- Center text
+    local text = selector:CreateFontString(nil, "OVERLAY")
+    text:SetFont(theme:GetFont("BUTTON"), INDICATOR_FONT_SIZE, "")
+    text:SetPoint("CENTER", 0, 0)
+    text:SetText("OFF")
+    text:SetTextColor(dimR, dimG, dimB, 1)
+    selector._text = text
+
+    -- Build options list: index 0 = OFF, then each sub-toggle with a variant
+    local options = {}
+    for _, sub in ipairs(subToggles) do
+        if sub.variant then
+            options[#options + 1] = sub
+        end
+    end
+    selector._options = options
+    selector._currentIndex = 0  -- 0 = OFF
+
+    function selector:UpdateState(activeSubId)
+        local r, g, b = theme:GetAccentColor()
+        local dR, dG, dB = theme:GetDimTextColor()
+
+        if not activeSubId then
+            -- OFF state
+            self._currentIndex = 0
+            self._fill:Hide()
+            self._text:SetText("OFF")
+            self._text:SetTextColor(dR, dG, dB, 1)
+            for _, tex in pairs(self._border) do tex:SetColorTexture(r, g, b, 0.4) end
+            return
+        end
+
+        for i, opt in ipairs(self._options) do
+            if opt.id == activeSubId then
+                self._currentIndex = i
+                local vc = addon.VARIANT_COLORS and addon.VARIANT_COLORS[opt.variant]
+                local vr, vg, vb = r, g, b
+                if vc then vr, vg, vb = vc[1], vc[2], vc[3] end
+                self._fill:SetColorTexture(vr, vg, vb, 1)
+                self._fill:Show()
+                self._text:SetText(opt.variant)
+                self._text:SetTextColor(0, 0, 0, 1)
+                for _, tex in pairs(self._border) do tex:SetColorTexture(vr, vg, vb, 1) end
+                return
+            end
+        end
+
+        -- Fallback: unknown sub ID, treat as OFF
+        self._currentIndex = 0
+        self._fill:Hide()
+        self._text:SetText("OFF")
+        self._text:SetTextColor(dR, dG, dB, 1)
+        for _, tex in pairs(self._border) do tex:SetColorTexture(r, g, b, 0.4) end
+    end
+
+    function selector:CycleNext()
+        local nextIdx = self._currentIndex + 1
+        if nextIdx > #self._options then nextIdx = 0 end
+        self._currentIndex = nextIdx
+        if nextIdx == 0 then
+            self:UpdateState(nil)
+            return nil
+        else
+            local opt = self._options[nextIdx]
+            self:UpdateState(opt.id)
+            return opt.id
+        end
+    end
+
+    function selector:GetActiveSubId()
+        if self._currentIndex == 0 then return nil end
+        local opt = self._options[self._currentIndex]
+        return opt and opt.id or nil
+    end
+
+    -- Tooltip on hover showing current variant info (colored to match variant)
+    selector:SetScript("OnEnter", function(self)
+        if self._currentIndex == 0 then return end
+        local opt = self._options[self._currentIndex]
+        if not opt or not opt.versionBadge then return end
+        local C = addon.UI and addon.UI.Controls
+        if C and C.GetOrCreateTooltip then
+            local tip = C:GetOrCreateTooltip()
+            tip:SetContent(opt.versionBadge.title or "", opt.versionBadge.text or "")
+            -- Color tooltip title and border to match variant
+            local vc = opt.variant and addon.VARIANT_COLORS and addon.VARIANT_COLORS[opt.variant]
+            if vc and tip._titleText then
+                tip._titleText:SetTextColor(vc[1], vc[2], vc[3], 1)
+            end
+            if vc and tip._border then
+                for _, tex in pairs(tip._border) do
+                    tex:SetColorTexture(vc[1], vc[2], vc[3], 1)
+                end
+            end
+            tip:ShowAtAnchor(self, "BOTTOMLEFT", "TOPLEFT", 0, 4)
+        end
+    end)
+    selector:SetScript("OnLeave", function()
+        local C = addon.UI and addon.UI.Controls
+        if C and C.GetOrCreateTooltip then
+            C:GetOrCreateTooltip():Hide()
+        end
+    end)
+
+    return selector
 end
 
 --------------------------------------------------------------------------------
@@ -230,40 +398,48 @@ local function CreateModuleRow(parent, options)
         labelFS:SetTextColor(ar, ag, ab, 0.75)
     end
 
-    -- Version badge info icon (e.g., "v1" / "v2" — replaces text info icons)
+    -- Version badge info icon (e.g., "X" / "Y" with variant color)
     if options.versionBadge and addon.UI and addon.UI.Controls and addon.UI.Controls.CreateInfoIcon then
+        -- Use variant color if available (X=green, Y=yellow, Z=blue)
+        local badgeColor = nil
+        if options.variant and addon.VARIANT_COLORS and addon.VARIANT_COLORS[options.variant] then
+            badgeColor = addon.VARIANT_COLORS[options.variant]
+        end
         local badge = addon.UI.Controls:CreateInfoIcon({
             parent = row,
             tooltipTitle = options.versionBadge.title or "",
             tooltipText = options.versionBadge.text or "",
             size = 14,
             iconType = "info",
+            customText = options.versionBadge.label or "",
+            colorOverride = badgeColor,
         })
         if badge._iconText then
-            badge._iconText:SetText(options.versionBadge.label or "")
             local fontPath = badge._iconText:GetFont()
             if fontPath then
                 pcall(badge._iconText.SetFont, badge._iconText, fontPath, 7, "OUTLINE")
             end
         end
         badge:SetPoint("LEFT", labelFS, "RIGHT", 4, 0)
+        row._variantBadge = badge
     end
 
-    -- ON/OFF indicator (right side) — hidden for header rows
+    -- ON/OFF indicator (right side) — hidden for header and variantSelector rows
     local indicator
-    if not options.isHeader then
+    if not options.isHeader and not options.variantSelector then
+        local variantColor = options.variant and addon.VARIANT_COLORS and addon.VARIANT_COLORS[options.variant]
         indicator = CreateIndicator(row, theme)
         indicator:SetPoint("RIGHT", row, "RIGHT", -ROW_PADDING, 0)
-        indicator:UpdateState(options.isOn)
+        indicator:UpdateState(options.isOn, variantColor)
 
         indicator:SetScript("OnClick", function()
             if options.onToggle then options.onToggle() end
         end)
     end
 
-    -- Click: label toggles (for non-header rows)
+    -- Click: label toggles (for non-header, non-variantSelector rows)
     labelBtn:SetScript("OnClick", function()
-        if not options.isHeader and options.onToggle then
+        if not options.isHeader and not options.variantSelector and options.onToggle then
             options.onToggle()
         end
     end)
@@ -317,7 +493,47 @@ local function BuildColumnContent(column, categories, startIdx, endIdx, state, t
 
         local hasSubToggles = catDef.subToggles and #catDef.subToggles > 0
 
-        if hasSubToggles then
+        if catDef.mutuallyExclusive and hasSubToggles then
+            -- Mutually exclusive: single row with compact variant selector
+            local variantRow = CreateModuleRow(column, {
+                label = catDef.label,
+                theme = theme,
+                variantSelector = true,
+            })
+            variantRow:SetPoint("TOPLEFT", column, "TOPLEFT", 0, -yOffset)
+            variantRow:SetPoint("TOPRIGHT", column, "TOPRIGHT", 0, -yOffset)
+
+            local selector = CreateVariantSelector(variantRow, theme, catDef.subToggles)
+            selector:SetPoint("RIGHT", variantRow, "RIGHT", -ROW_PADDING, 0)
+
+            -- Determine current active sub-toggle
+            local activeSub = nil
+            for _, sub in ipairs(catDef.subToggles) do
+                if IsSubToggleOn(catId, sub) then activeSub = sub break end
+            end
+            selector:UpdateState(activeSub and activeSub.id or nil)
+
+            selector:SetScript("OnClick", function()
+                local nextSubId = selector:CycleNext()
+                for _, sub in ipairs(catDef.subToggles) do
+                    SetSubToggle(catId, sub, false)
+                end
+                if nextSubId then
+                    for _, sub in ipairs(catDef.subToggles) do
+                        if sub.id == nextSubId then
+                            SetSubToggle(catId, sub, true)
+                            break
+                        end
+                    end
+                end
+                state.dirty = true
+                if state.registerGuard then state.registerGuard() end
+                rebuild()
+            end)
+
+            table.insert(state.rows, variantRow)
+            yOffset = yOffset + ROW_HEIGHT
+        elseif hasSubToggles then
             -- Header row (no toggle indicator)
             local headerRow = CreateModuleRow(column, {
                 label = catDef.label,
@@ -337,17 +553,10 @@ local function BuildColumnContent(column, categories, startIdx, endIdx, state, t
                     isOn = subIsOn,
                     indent = SUB_INDENT,
                     versionBadge = sub.versionBadge,
+                    variant = sub.variant,
                     theme = theme,
                     onToggle = function()
                         local newValue = not IsSubToggleOn(catId, sub)
-                        -- Mutually exclusive: turning one ON turns all others OFF
-                        if catDef.mutuallyExclusive and newValue then
-                            for _, other in ipairs(catDef.subToggles) do
-                                if other.id ~= sub.id then
-                                    SetSubToggle(catId, other, false)
-                                end
-                            end
-                        end
                         SetSubToggle(catId, sub, newValue)
                         state.dirty = true
                         if state.registerGuard then state.registerGuard() end
@@ -571,7 +780,7 @@ function StartHere.Render(panel, scrollContent)
     panel._startHereCleanup = function() Cleanup(panel) end
 
     -- Navigation guard: called by toggle handlers when dirty to register a
-    -- confirmation dialog before allowing navigation away from Start Here.
+    -- confirmation dialog before allowing navigation away from Features page.
     pageState.registerGuard = function()
         if panel._navigationGuard then return end
         panel._navigationGuard = function(_, proceed)

@@ -2,6 +2,16 @@
 local _, addon = ...
 
 --------------------------------------------------------------------------------
+-- X/Y/Z Variant Color Definitions
+--------------------------------------------------------------------------------
+
+addon.VARIANT_COLORS = {
+    X = { 0.2, 0.9, 0.3 },   -- Green (Native)
+    Y = { 1.0, 0.85, 0.1 },  -- Yellow (Modern)
+    Z = { 0.3, 0.6, 1.0 },   -- Blue (Text)
+}
+
+--------------------------------------------------------------------------------
 -- Component ID → Category Mapping
 --------------------------------------------------------------------------------
 
@@ -98,7 +108,7 @@ addon.MODULE_CATEGORIES = {
     },
     classAuras = {
         label = "Class Auras",
-        -- No sub-toggles on Start Here (dynamic per-class aura IDs)
+        -- No sub-toggles on Features page (dynamic per-class aura IDs)
     },
     cooldownManager = {
         label = "Cooldown Manager",
@@ -119,9 +129,11 @@ addon.MODULE_CATEGORIES = {
         noMasterToggle = true, -- no parent ON/OFF; master state derived from sub-toggles
         subToggles = {
             { id = "damageMeter", label = "Damage Meters",
-              versionBadge = { label = "v1", title = "Blizzard Overlay", text = "Reskins Blizzard's built-in damage meter frames. Heavily customized frames may result in taint errors during raid encounters, use with caution." } },
+              variant = "X",
+              versionBadge = { label = "X", title = "Damage Meters X", text = "Reskins Blizzard's built-in damage meter frames. Heavily customized frames may result in taint errors during raid encounters, use with caution." } },
             { id = "damageMeterV2", label = "Damage Meters",
-              versionBadge = { label = "v2", title = "Custom Frames", text = "Fully Scoot-owned frames. Zero taint. Multi-column and multi-window support." } },
+              variant = "Y",
+              versionBadge = { label = "Y", title = "Damage Meters Y", text = "Custom frames that replace Blizzard's meter entirely. Zero taint. Multi-column and multi-window support." } },
         },
     },
     extraAbilities = {

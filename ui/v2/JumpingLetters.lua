@@ -1,4 +1,4 @@
--- JumpingLetters.lua - Animated "Start Here" text for new users (all modules off)
+-- JumpingLetters.lua - Animated "Features" text for new users (all modules off)
 local addonName, addon = ...
 
 local Navigation = addon.UI.Navigation
@@ -12,7 +12,7 @@ local JUMP_HEIGHT = 5          -- pixels each letter jumps up
 local JUMP_DURATION = 0.12     -- seconds for one direction (up or down)
 local CHAR_STAGGER = 0.08      -- delay between each letter's jump start
 local CYCLE_PAUSE = 1.5        -- seconds between animation cycles
-local LABEL_TEXT = "Start Here"
+local LABEL_TEXT = "Features"
 local LABEL_SIZE = 12
 local LABEL_LEFT_OFFSET = 8    -- matches CreateParentRow label positioning
 
@@ -261,7 +261,7 @@ function Navigation:MaybeStartJumpingLetters()
     if not addon.AreAllModulesDisabled then return end
     if not addon:AreAllModulesDisabled() then return end
 
-    -- Find the "Start Here" row
+    -- Find the "Features" row
     for _, row in ipairs(self._rows) do
         if row and row._key == "startHere" then
             self:SetupJumpingLetters(row)

@@ -355,7 +355,7 @@ end
 
 function Search:NavigateToResult(entry)
     if IsModuleDisabled(entry) then
-        -- Navigate to Start Here so user can enable the module
+        -- Navigate to Features page so user can enable the module
         local parentKey = Search._parentKeyMap and Search._parentKeyMap["startHere"]
         if parentKey then
             Navigation._expandedSections[parentKey] = true
@@ -519,7 +519,7 @@ function Search:RenderResults(scrollContent)
         else
             row:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                GameTooltip:SetText("Enable this module in the 'Start Here' tab.", 1, 1, 1, 1, true)
+                GameTooltip:SetText("Enable this module on the 'Features' page.", 1, 1, 1, 1, true)
                 GameTooltip:Show()
             end)
             row:SetScript("OnLeave", function(self)
