@@ -71,9 +71,6 @@ local function updateDebuffBorderOverlay(aura, state, iconWidth, iconHeight)
     local bw = iconWidth * (40 / 30)
     local bh = iconHeight * (40 / 30)
     overlay:SetSize(bw, bh)
-    -- Cache overlay dimensions for hook-based border resizing (defense in depth)
-    state._overlayBorderW = bw
-    state._overlayBorderH = bh
     overlay:ClearAllPoints()
     local icon = aura.Icon or aura.icon or aura.IconTexture
     overlay:SetPoint("CENTER", icon or aura, "CENTER")
@@ -100,9 +97,6 @@ local function updateTempEnchantBorderOverlay(aura, state, iconWidth, iconHeight
     local bw = iconWidth * (32 / 30)
     local bh = iconHeight * (32 / 30)
     overlay:SetSize(bw, bh)
-    -- Cache overlay dimensions for hook-based border resizing (defense in depth)
-    state._overlayBorderW = bw
-    state._overlayBorderH = bh
     overlay:ClearAllPoints()
     local icon = aura.Icon or aura.icon or aura.IconTexture
     overlay:SetPoint("CENTER", icon or aura, "CENTER")
@@ -210,14 +204,6 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
             if st.lastFontKey == nil then
                 reapplyFont(st)
             end
-            -- Per-frame draw layer defense: if PCALL 4 failed to set draw layer,
-            -- the FontString stays at its XML default (BACKGROUND), rendering behind
-            -- the OVERLAY-layer debuff border overlay. Fix it here within one frame.
-            -- Cost when healthy: one nil check (lastDrawLayer is set by applyAuraText).
-            if not st.lastDrawLayer then
-                pcall(fs.SetDrawLayer, fs, "OVERLAY", 10)
-                st.lastDrawLayer = true
-            end
         end
 
         local fontObjectCallback = function()
@@ -225,7 +211,6 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
             if not st then return end
             -- SetFontObject resets font face, size, style, and may reset color — invalidate all caches
             st.lastFontKey = nil
-            st.lastDrawLayer = nil
             st.lastColorR = nil
             st.lastColorG = nil
             st.lastColorB = nil
@@ -285,7 +270,6 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
             if addon.ApplyFontStyle then addon.ApplyFontStyle(fs, face, size, style) else fs:SetFont(face, size, style) end
             if state then
                 state.lastFontKey = fontKey
-                state.lastDrawLayer = true  -- cache for colorCallback per-frame defense
             end
         end
         -- OPT-26 Change 2: Color cache — skip SetTextColor when color values unchanged
@@ -599,18 +583,18 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                     ok3 = pcall(function()
                     if componentId == "debuffs" and icon then
                         local auraSt = getState(aura)
-                        -- Skip private aura anchors — borders managed by game client
-                        local isPrivateAnchor = false
-                        local okAnc, isAnc = pcall(function() return aura.isAuraAnchor end)
-                        if okAnc and isAnc and not issecretvalue(isAnc) then
-                            isPrivateAnchor = true
-                        end
-
-                        if isPrivateAnchor then
-                            -- Private aura anchor: don't create overlays, hide any stale ones
+                        -- Skip empty slots: private aura anchors persist as placeholders
+                        -- (privateAuraAnchor1..6) even when no private aura is active.
+                        -- An active aura always has DebuffBorder or TempEnchantBorder shown
+                        -- by Blizzard; both hidden means nothing to overlay.
+                        local dbShown = aura.DebuffBorder and aura.DebuffBorder:IsShown()
+                        local tebShown = aura.TempEnchantBorder and aura.TempEnchantBorder:IsShown()
+                        local isEmptySlot = (not dbShown) and (not tebShown)
+                        if isEmptySlot then
+                            -- Hide any stale overlays and clear flag (handles aura-removed transitions)
                             auraSt._wantNonSquareOverlay = nil
-                            if auraSt and auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
-                            if auraSt and auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
+                            if auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
+                            if auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
                         elseif ratio ~= 0 and not borderEnabled then
                             -- Set flag FIRST — hooks check this flag, not overlay:IsShown().
                             -- Blizzard never calls SetAlpha on DebuffBorder/TempEnchantBorder,
@@ -651,15 +635,6 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                                 auraSt._tebShowHooked = true
                             end
 
-                            -- Defense in depth: resize Blizzard borders to non-square shape.
-                            -- Even if alpha somehow gets reset to 1, border renders at correct shape.
-                            if aura.DebuffBorder and aura.DebuffBorder.SetSize then
-                                pcall(aura.DebuffBorder.SetSize, aura.DebuffBorder, width * (40 / 30), height * (40 / 30))
-                            end
-                            if aura.TempEnchantBorder and aura.TempEnchantBorder.SetSize then
-                                pcall(aura.TempEnchantBorder.SetSize, aura.TempEnchantBorder, width * (32 / 30), height * (32 / 30))
-                            end
-
                             -- Detect which border type via aura.auraType (set by Blizzard's UpdateAuraType)
                             local isTempEnchant = false
                             local okType, aType = pcall(function() return aura.auraType end)
@@ -681,13 +656,6 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
                         else
                             -- Square icons or custom border active: clear flag, restore borders, hide overlays
                             auraSt._wantNonSquareOverlay = nil
-                            -- Restore Blizzard border sizes to XML defaults (undo non-square resize)
-                            if aura.DebuffBorder and aura.DebuffBorder.SetSize then
-                                pcall(aura.DebuffBorder.SetSize, aura.DebuffBorder, 40, 40)
-                            end
-                            if aura.TempEnchantBorder and aura.TempEnchantBorder.SetSize then
-                                pcall(aura.TempEnchantBorder.SetSize, aura.TempEnchantBorder, 32, 32)
-                            end
                             -- Restore alpha for Blizzard borders (undo alpha-based hiding)
                             if aura.DebuffBorder then pcall(aura.DebuffBorder.SetAlpha, aura.DebuffBorder, 1) end
                             if aura.TempEnchantBorder then pcall(aura.TempEnchantBorder.SetAlpha, aura.TempEnchantBorder, 1) end
@@ -729,8 +697,7 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
 
                     -- Version stamp: only mark styled when ALL pcalls succeeded.
                     -- Failed buttons keep stale version, ensuring re-attempt on next
-                    -- forceRestyle=false pass. The post-loop safety nets provide
-                    -- immediate recovery for the current pass.
+                    -- UpdateAuraButtons call (via forceRestyle or version mismatch).
                     if auraVState and ok1 and ok2 and ok3 and ok4 then
                         auraVState.lastStyledVersion = currentVersion
                     end
@@ -740,108 +707,6 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         end
     end
 
-    -- Post-loop safety net for debuff border overlays.
-    -- Runs OUTSIDE the per-aura pcall so it executes even if the main loop aborted
-    -- for specific buttons. Guarantees every debuff button gets alpha enforcement +
-    -- overlay creation when non-square icons are active.
-    if componentId == "debuffs" and ratio ~= 0 and not borderEnabled then
-        for _, collection in ipairs(auraCollections) do
-            for _, aura in ipairs(collection) do
-                pcall(function()
-                    if not aura then return end
-                    -- Skip private aura anchors
-                    local okAnc, isAnc = pcall(function() return aura.isAuraAnchor end)
-                    if okAnc and isAnc and not issecretvalue(isAnc) then return end
-
-                    -- Enforce alpha(0) on Blizzard borders
-                    if aura.DebuffBorder then aura.DebuffBorder:SetAlpha(0) end
-                    if aura.TempEnchantBorder then aura.TempEnchantBorder:SetAlpha(0) end
-
-                    local auraSt = auraState[aura]
-                    if not auraSt then auraSt = getState(aura) end
-                    if not auraSt then return end
-
-                    -- Set flag (may have been missed if main loop pcall aborted)
-                    auraSt._wantNonSquareOverlay = true
-
-                    -- Install Show hooks if not done yet
-                    if not auraSt._dbShowHooked and aura.DebuffBorder then
-                        pcall(function()
-                            hooksecurefunc(aura.DebuffBorder, "Show", function(self)
-                                local parent = self:GetParent()
-                                if not parent then return end
-                                local st = auraState[parent]
-                                if st and st._wantNonSquareOverlay then
-                                    pcall(self.SetAlpha, self, 0)
-                                end
-                            end)
-                        end)
-                        auraSt._dbShowHooked = true
-                    end
-                    if not auraSt._tebShowHooked and aura.TempEnchantBorder then
-                        pcall(function()
-                            hooksecurefunc(aura.TempEnchantBorder, "Show", function(self)
-                                local parent = self:GetParent()
-                                if not parent then return end
-                                local st = auraState[parent]
-                                if st and st._wantNonSquareOverlay then
-                                    pcall(self.SetAlpha, self, 0)
-                                end
-                            end)
-                        end)
-                        auraSt._tebShowHooked = true
-                    end
-
-                    -- Ensure overlay texture exists and is correctly configured.
-                    -- Always call ensure + update unconditionally (ensure is a no-op when
-                    -- overlay already exists). Also hide stale alternate overlay type to
-                    -- handle debuff<->tempenchant type switches on recycled buttons.
-                    local isTempEnchant = false
-                    local okType, aType = pcall(function() return aura.auraType end)
-                    if okType and aType and not issecretvalue(aType) and aType == "TempEnchant" then
-                        isTempEnchant = true
-                    end
-
-                    if isTempEnchant then
-                        ensureOverlayTexture(aura, "tempEnchantBorderOverlay", "OVERLAY", 1)
-                        updateTempEnchantBorderOverlay(aura, auraSt, width, height)
-                        if auraSt.debuffBorderOverlay then auraSt.debuffBorderOverlay:Hide() end
-                    else
-                        ensureOverlayTexture(aura, "debuffBorderOverlay", "OVERLAY", 1)
-                        updateDebuffBorderOverlay(aura, auraSt, width, height)
-                        if auraSt.tempEnchantBorderOverlay then auraSt.tempEnchantBorderOverlay:Hide() end
-                    end
-                end)
-            end
-        end
-    end
-
-    -- Post-loop text safety net.
-    -- Runs OUTSIDE the per-aura pcalls so it executes even if PCALL 4 failed
-    -- for specific buttons. Always re-applies text styling unconditionally —
-    -- OPT-26 caching inside applyAuraText makes redundant calls cheap
-    -- (~6 comparisons per FontString when already styled correctly).
-    -- Previous bug: textHooked guard skipped buttons where hooks existed from
-    -- a prior pass but PCALL 4 failed, leaving SetDrawLayer/font/color unapplied.
-    for _, collection in ipairs(auraCollections) do
-        for _, aura in ipairs(collection) do
-            pcall(function()
-                if not aura then return end
-
-                -- Stacks FontString
-                local stacksFS = aura.Count or aura.count or aura.Applications
-                if stacksFS and stacksFS.GetObjectType and stacksFS:GetObjectType() == "FontString" then
-                    applyAuraText(stacksFS, "textStacks", 16, aura)
-                end
-
-                -- Duration FontString
-                local durationFS = aura.Duration
-                if durationFS and durationFS.GetObjectType and durationFS:GetObjectType() == "FontString" then
-                    applyAuraText(durationFS, "textDuration", 16, aura)
-                end
-            end)
-        end
-    end
 end
 
 -- OPT-15: Lightweight opacity-only refresh for RefreshOpacityState dispatch.
