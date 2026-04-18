@@ -985,8 +985,8 @@ function UIPanel:CreateContentPane()
             letter = "Z",
             color = { 0.3, 0.6, 1.0 },
             tooltipTitle = "Text",
-            tooltipText = "A future direction for the project: a text-powered UI with pixel art, retro fonts, 8-bit icons, and arcade flourishes. A complete visual identity designed from the ground up. No timeline yet.",
-            summary = "A future text-powered UI built on pixel art, retro fonts, and 8-bit icons. An idea for down the road — no timeline yet.",
+            tooltipText = "Heavily stylized, opinionated UI elements with a text-centric design. A complete visual identity designed from the ground up - the Dev's playground for new ideas that change what the WoW UI can become.",
+            summary = "Highly stylized, opinionated UI elements designed from scratch around a strong visual identity. These features are experimental and conceptually unique.",
         },
     }
 
