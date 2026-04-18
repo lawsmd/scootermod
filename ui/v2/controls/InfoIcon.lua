@@ -206,15 +206,15 @@ function Controls:CreateInfoIcon(options)
     border.BOTTOM = bottom
 
     local left = icon:CreateTexture(nil, "BORDER", nil, -1)
-    left:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
-    left:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", 0, 0)
+    left:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, -BORDER_WIDTH)
+    left:SetPoint("BOTTOMLEFT", icon, "BOTTOMLEFT", 0, BORDER_WIDTH)
     left:SetWidth(BORDER_WIDTH)
     left:SetColorTexture(ar, ag, ab, 0.6)
     border.LEFT = left
 
     local right = icon:CreateTexture(nil, "BORDER", nil, -1)
-    right:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 0, 0)
-    right:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
+    right:SetPoint("TOPRIGHT", icon, "TOPRIGHT", 0, -BORDER_WIDTH)
+    right:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, BORDER_WIDTH)
     right:SetWidth(BORDER_WIDTH)
     right:SetColorTexture(ar, ag, ab, 0.6)
     border.RIGHT = right
@@ -233,7 +233,7 @@ function Controls:CreateInfoIcon(options)
     local fontPath = theme:GetFont("BUTTON")
     local fontSize = math.max(size - 4, 8)  -- Scale font with icon size
     pcall(iconText.SetFont, iconText, fontPath, fontSize, "")
-    iconText:SetPoint("CENTER", 0, 0)
+    iconText:SetPoint("CENTER", 0, -1)
     local displayText = options.customText or (iconType == "help" and "?" or "i")
     iconText:SetText(displayText)
     iconText:SetTextColor(ar, ag, ab, 1)
