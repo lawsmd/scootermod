@@ -128,16 +128,17 @@ function CB._installGradientHook(spellFS, cfgResolver, parentFrame)
 		if mode ~= "classGradient" and mode ~= "specGradient" and mode ~= "customGradient" then return end
 		if not addon.BuildColorRampString then return end
 		local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(mode, styleCfg)
-		-- Text-fill mode: apply gradient to filledText, uniform codes to frame.Text
+		-- Text-fill mode: apply IDENTICAL gradient to both filledText and frame.Text.
+		-- Byte-identical |cff codes are what eliminate shaper-run kerning drift
+		-- (pitfall #28). frame.Text is dimmed via SetAlpha in syncTextFillText.
 		if parentFrame and CB._getProp(parentFrame, "textFillActive") then
 			local els = CB._getProp(parentFrame, "textFillElements")
+			local gradientStr = addon.BuildColorRampString(text, r1, g1, b1, r2, g2, b2)
 			if els and els.filledText then
-				pcall(els.filledText.SetText, els.filledText, addon.BuildColorRampString(text, r1, g1, b1, r2, g2, b2))
+				pcall(els.filledText.SetText, els.filledText, gradientStr)
 			end
-			-- Apply matching per-character codes to frame.Text for truncation parity
-			local uc = CB._getProp(parentFrame, "textFillUnfilledColor") or {0.5, 0.5, 0.5}
 			CB._rampApplying = true
-			pcall(self.SetText, self, addon.BuildColorRampString(text, uc[1], uc[2], uc[3], uc[1], uc[2], uc[3]))
+			pcall(self.SetText, self, gradientStr)
 			CB._rampApplying = false
 			return
 		end
@@ -163,18 +164,16 @@ function CB._applySpellNameColor(spellFS, styleCfg, parentFrame)
 			local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode, styleCfg)
 			local rampText = addon.BuildColorRampString(cachedText, r1, g1, b1, r2, g2, b2)
 			if isTextFill then
-				-- Text-fill: gradient goes to filledText; uniform codes on frame.Text
+				-- Text-fill: apply IDENTICAL gradient to both filledText and frame.Text.
+				-- Byte-identical |cff codes eliminate shaper-run kerning drift
+				-- (pitfall #28). frame.Text is dimmed via SetAlpha in syncTextFillText.
 				local els = CB._getProp(parentFrame, "textFillElements")
 				if els and els.filledText then
 					pcall(els.filledText.SetText, els.filledText, rampText)
 				end
-				-- Apply matching per-character codes to frame.Text for truncation parity
-				local uc = CB._getProp(parentFrame, "textFillUnfilledColor") or {0.5, 0.5, 0.5}
 				CB._rampApplying = true
-				pcall(spellFS.SetText, spellFS, addon.BuildColorRampString(cachedText, uc[1], uc[2], uc[3], uc[1], uc[2], uc[3]))
+				pcall(spellFS.SetText, spellFS, rampText)
 				CB._rampApplying = false
-				-- SetTextColor on frame.Text will be handled by syncTextFillText's
-				-- unfilled text color override — don't set it here
 			else
 				-- Normal mode: gradient on frame.Text, white base color
 				if spellFS.SetTextColor then

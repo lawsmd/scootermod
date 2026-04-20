@@ -1269,12 +1269,16 @@ do
 								end
 							end
                             -- Determine border anchor target: use clipping container if height reduction active,
-                            -- otherwise HealthBarsContainer so the border wraps both HealthBar and TempMaxHealthLoss
+                            -- otherwise a union frame spanning HealthBar + HealthBarsContainer so the border
+                            -- matches the overlay on "minus" mobs (shrunken container) AND still wraps
+                            -- TempMaxHealthLoss when active.
                             local st = getState(hb)
                             local hbContainer = resolveHealthContainer(frame, unit)
                             local borderAnchorTarget
                             if st and st.heightClipContainer and st.heightClipActive then
                                 borderAnchorTarget = st.heightClipContainer
+                            elseif addon.BarsOverlays and addon.BarsOverlays._ensureBorderUnionAnchor then
+                                borderAnchorTarget = addon.BarsOverlays._ensureBorderUnionAnchor(hb, hbContainer, unit) or hbContainer
                             else
                                 borderAnchorTarget = hbContainer
                             end

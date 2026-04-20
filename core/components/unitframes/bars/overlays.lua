@@ -664,6 +664,52 @@ local function ensureHeightClipContainer(bar, unit, cfg)
 end
 BO._ensureHeightClipContainer = ensureHeightClipContainer
 
+-- Border anchor that spans the union of HealthBar and HealthBarsContainer bounds.
+-- Needed because Blizzard's CheckClassification() shrinks HealthBarsContainer for
+-- "minus" mobs while HealthBar keeps its fixed XML size, so neither frame alone
+-- covers the visible overlay in every case.
+local function ensureBorderUnionAnchor(hb, hbContainer, unit)
+    if not hb or not hbContainer then return nil end
+    local st = getState(hb)
+    if not st then return nil end
+
+    local union = st.borderUnionFrame
+    if not union then
+        union = CreateFrame("Frame", nil, hbContainer)
+        st.borderUnionFrame = union
+        if hb.HookScript then
+            hb:HookScript("OnSizeChanged", function() ensureBorderUnionAnchor(hb, hbContainer, unit) end)
+        end
+        if hbContainer.HookScript then
+            hbContainer:HookScript("OnSizeChanged", function() ensureBorderUnionAnchor(hb, hbContainer, unit) end)
+        end
+    end
+
+    union:ClearAllPoints()
+    union:SetPoint("TOPLEFT", hbContainer, "TOPLEFT", 0, 0)
+
+    local okH1, hbH = pcall(hb.GetHeight, hb)
+    local okH2, cH  = pcall(hbContainer.GetHeight, hbContainer)
+    local okW1, hbW = pcall(hb.GetWidth, hb)
+    local okW2, cW  = pcall(hbContainer.GetWidth, hbContainer)
+
+    local bottomAnchor = hbContainer
+    if okH1 and okH2 and type(hbH) == "number" and type(cH) == "number"
+        and not issecretvalue(hbH) and not issecretvalue(cH) and hbH > cH then
+        bottomAnchor = hb
+    end
+    local rightAnchor = hbContainer
+    if okW1 and okW2 and type(hbW) == "number" and type(cW) == "number"
+        and not issecretvalue(hbW) and not issecretvalue(cW) and hbW > cW then
+        rightAnchor = hb
+    end
+
+    union:SetPoint("BOTTOM", bottomAnchor, "BOTTOM", 0, 0)
+    union:SetPoint("RIGHT",  rightAnchor,  "RIGHT",  0, 0)
+    return union
+end
+BO._ensureBorderUnionAnchor = ensureBorderUnionAnchor
+
 -- Reparent AnimatedLossBar into clipping container for proper height clipping (Player only).
 -- The AnimatedLossBar shows health lost as a dark red bar that fades out. Without reparenting,
 -- it appears at full height even when height reduction is active, and renders in the wrong z-order.

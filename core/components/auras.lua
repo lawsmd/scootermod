@@ -10,6 +10,17 @@ local PlayerInCombat = Util.PlayerInCombat
 -- (which would taint them and cause secret value errors during Edit Mode operations)
 local auraState = setmetatable({}, { __mode = "k" })  -- frame/fs/tex/border -> state table
 
+-- Active PrivateAuraTemplate pool frames (populated by PrivateAuraMixin:Update hook).
+-- The privateAuraAnchor1..6 frames in DebuffFrame.auraFrames are empty placeholders — the
+-- actual aura is drawn by a separate pool frame (AuraButtonArtTemplate-derived) parented
+-- to the anchor, never added to any iterable DebuffFrame list. Recording them here lets
+-- ApplyAuraFrameVisualsFor style the frame that actually owns DebuffBorder/Count/Duration.
+local activePrivateAuraFrames = setmetatable({}, { __mode = "k" })
+
+-- Guard so we only install the PrivateAuraMixin hook once, even if ApplyStyling runs
+-- multiple times (profile swap, /reload mid-session, etc.).
+local privateAuraHookInstalled = false
+
 -- Config version tracking: skip re-styling auras when config hasn't changed (OPT-01)
 local configVersions = {}  -- componentId -> integer
 
@@ -462,6 +473,21 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         end
     end
 
+    -- Private aura pool frames: the actual visible private-aura buttons, parented to
+    -- privateAuraAnchorN but not present in any DebuffFrame.*auraFrames list. Populated
+    -- by the PrivateAuraMixin:Update hook installed at init. IsShown() filters frames
+    -- released back to the pool (hidden but still referenced by the pool's inactiveObjects).
+    if componentId == "debuffs" then
+        local activePool
+        for poolFrame in pairs(activePrivateAuraFrames) do
+            if poolFrame and poolFrame.IsShown and poolFrame:IsShown() then
+                if not activePool then activePool = {} end
+                table.insert(activePool, poolFrame)
+            end
+        end
+        if activePool then addCollection(activePool) end
+    end
+
     local currentVersion = configVersions[componentId] or 0
 
     local processed = {}
@@ -728,11 +754,42 @@ local function RefreshAuraOpacity(self)
     pcall(container.SetAlpha, container, appliedOpacity / 100)
 end
 
+-- Hook PrivateAuraMixin:Update so we can discover the pool frames Blizzard creates for
+-- active private auras. self inside the hook is the pool frame itself (a PrivateAuraTemplate
+-- inheriting AuraButtonArtTemplate) — the frame that actually owns DebuffBorder/Count/Duration.
+-- Recording it in activePrivateAuraFrames lets the next ApplyAuraFrameVisualsFor pass pick it
+-- up via the shared iteration, so PCALLs 1–4 run against the right frame.
+local function installPrivateAuraHook()
+    if privateAuraHookInstalled then return end
+    if type(PrivateAuraMixin) ~= "table" or type(PrivateAuraMixin.Update) ~= "function" then
+        return
+    end
+
+    hooksecurefunc(PrivateAuraMixin, "Update", function(self)
+        if not self then return end
+        activePrivateAuraFrames[self] = true
+        -- Invalidate version stamp so the next pass re-styles this frame even though
+        -- the overall config version hasn't changed (pool frame may have been recycled
+        -- for a different aura type, changing dispel atlas/color).
+        local st = auraState[self]
+        if st then st.lastStyledVersion = nil end
+        if addon.Components and addon.Components.debuffs and addon.ApplyAuraFrameVisualsFor then
+            addon.ApplyAuraFrameVisualsFor(addon.Components.debuffs, false)
+        end
+    end)
+
+    privateAuraHookInstalled = true
+end
+
 local function ApplyAuraFrameStyling(self)
     local frame = _G[self.frameName]
     if not frame or not frame.AuraContainer then return end
     -- Zero-Touch: skip unconfigured components (still on proxy DB)
     if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
+
+    if self.id == "debuffs" then
+        installPrivateAuraHook()
+    end
 
     local frameState = getState(frame)
     if hooksecurefunc and frameState and not frameState.auraHooked then

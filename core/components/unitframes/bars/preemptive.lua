@@ -673,6 +673,26 @@ function Preemptive.installBossFrameHooks()
                         end
                     end
                 end
+
+                -- Re-hide LevelText (CheckLevel() calls levelText:Show() and overrides our hide)
+                if cfg.levelTextHidden == true then
+                    local levelFS = bossFrame.TargetFrameContent
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain.LevelText
+                    if levelFS and levelFS.SetShown then
+                        pcall(levelFS.SetShown, levelFS, false)
+                    end
+                end
+
+                -- Re-hide NameText (for symmetry with Target/Focus)
+                if cfg.nameTextHidden == true then
+                    local nameFS = bossFrame.TargetFrameContent
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain
+                        and bossFrame.TargetFrameContent.TargetFrameContentMain.Name
+                    if nameFS and nameFS.SetShown then
+                        pcall(nameFS.SetShown, nameFS, false)
+                    end
+                end
             end
         end
     end
@@ -699,6 +719,20 @@ function Preemptive.installBossFrameHooks()
             if bossFrame.CheckFaction and bossState and not bossState.bossCheckFactionHooked then
                 bossState.bossCheckFactionHooked = true
                 _G.hooksecurefunc(bossFrame, "CheckFaction", rehideBossElements)
+            end
+
+            -- Hook CheckLevel — fires when unit level info resolves. Adds often
+            -- spawn before level is known, so CheckLevel() runs AFTER OnShow/Update
+            -- and calls levelText:Show(), undoing our hide.
+            if bossFrame.CheckLevel and bossState and not bossState.bossCheckLevelHooked then
+                bossState.bossCheckLevelHooked = true
+                _G.hooksecurefunc(bossFrame, "CheckLevel", function()
+                    if _G.C_Timer and _G.C_Timer.After then
+                        _G.C_Timer.After(0, rehideBossElements)
+                    else
+                        rehideBossElements()
+                    end
+                end)
             end
 
             -- Hook SetVertexColor on ReputationColor for extra coverage

@@ -51,6 +51,16 @@ local function getContainerState()
     return extraAbilityState.container
 end
 
+-- Blizzard skips ApplySystemAnchor on this container at late-login, so /reload inside an instance leaves it at default CENTER until Edit Mode toggled.
+local function RestoreContainerAnchor()
+    local container = _G.ExtraAbilityContainer
+    if not container or container:IsForbidden() then return end
+    if InCombatLockdown() then return end
+    if not container.systemInfo or not container.systemInfo.anchorInfo then return end
+    if type(container.ApplySystemAnchor) ~= "function" then return end
+    pcall(container.ApplySystemAnchor, container)
+end
+
 local function setContainerDesiredAlpha(container, alpha)
     if not container or not container.SetAlpha then return end
     local state = getContainerState()
@@ -204,6 +214,8 @@ local function ApplyExtraAbilitiesStyling(self)
 
     -- Zero-Touch: skip unconfigured components (still on proxy DB)
     if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
+
+    RestoreContainerAnchor()
 
     -- Apply scale to container
     local scale = tonumber(self.db.scale) or 100
@@ -567,6 +579,7 @@ addon:RegisterComponentInitializer(function(self)
     eventFrame:SetScript("OnEvent", function()
         C_Timer.After(1, function()
             InstallDynamicHooks(extraAbilities)
+            RestoreContainerAnchor()
         end)
     end)
 end, "extraAbilities")

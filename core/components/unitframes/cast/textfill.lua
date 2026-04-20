@@ -836,8 +836,38 @@ local function applyTextFillMode(frame, cfg, unit, empowered)
 		end)
 	end
 
-	-- Install SetText hook once for text content sync
+	-- Install SetWidth guard once: re-clamp any non-zero SetWidth to 0 while text-fill
+	-- is active. Defensive belt-and-suspenders for pitfall #28 — ensures truncation
+	-- never kicks in even if an unknown code path reapplies a width constraint.
 	local spellFS = frame.Text
+	if spellFS and not getProp(frame, "textFillSetWidthHooked") then
+		setProp(frame, "textFillSetWidthHooked", true)
+		local widthApplying = false
+		hooksecurefunc(spellFS, "SetWidth", function(self, w)
+			if widthApplying then return end
+			if not getProp(frame, "textFillActive") then return end
+			if type(w) == "number" and w > 0 then
+				widthApplying = true
+				pcall(self.SetWidth, self, 0)
+				widthApplying = false
+			end
+		end)
+	end
+	if elements and elements.filledText and not getProp(frame, "textFillFilledSetWidthHooked") then
+		setProp(frame, "textFillFilledSetWidthHooked", true)
+		local widthApplying = false
+		hooksecurefunc(elements.filledText, "SetWidth", function(self, w)
+			if widthApplying then return end
+			if not getProp(frame, "textFillActive") then return end
+			if type(w) == "number" and w > 0 then
+				widthApplying = true
+				pcall(self.SetWidth, self, 0)
+				widthApplying = false
+			end
+		end)
+	end
+
+	-- Install SetText hook once for text content sync
 	if spellFS and not getProp(frame, "textFillSetTextHooked") then
 		setProp(frame, "textFillSetTextHooked", true)
 		hooksecurefunc(spellFS, "SetText", function(self, text)
@@ -987,8 +1017,6 @@ local function syncTextFillText(frame, cfg)
 			rawText = ""
 		end
 	end
-	-- Store unfilled text color on frame state for gradient hook access
-	setProp(frame, "textFillUnfilledColor", cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5})
 	-- During empowered text-fill, skip gradient coloring — stage updater manages filled text color.
 	-- Use plain text so SetTextColor from the stage updater is the sole color source.
 	local isEmpoweredTF = elements.empowered and elements.empowered.active
@@ -1006,12 +1034,12 @@ local function syncTextFillText(frame, cfg)
 		setProp(frame, "textFillGradientActive", nil)
 	elseif isGradientActive and addon.BuildColorRampString then
 		local r1, g1, b1, r2, g2, b2 = CB._resolveGradientColors(colorMode_tf, styleCfg_tf)
-		elements.filledText:SetText(addon.BuildColorRampString(rawText, r1, g1, b1, r2, g2, b2))
-		-- Apply matching per-character codes to frame.Text so both strings have identical
-		-- |cff escape code structure, ensuring consistent truncation rendering
-		local uc = cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5}
+		local gradientStr = addon.BuildColorRampString(rawText, r1, g1, b1, r2, g2, b2)
+		elements.filledText:SetText(gradientStr)
+		-- Identical |cff codes on frame.Text eliminate per-character shaper-run
+		-- kerning drift that caused ~1-2px apostrophe ghost (see pitfall #28).
 		CB._rampApplying = true
-		pcall(spellFS.SetText, spellFS, addon.BuildColorRampString(rawText, uc[1], uc[2], uc[3], uc[1], uc[2], uc[3]))
+		pcall(spellFS.SetText, spellFS, gradientStr)
 		CB._rampApplying = false
 	else
 		elements.filledText:SetText(rawText)
@@ -1070,11 +1098,19 @@ local function syncTextFillText(frame, cfg)
 		elements.filledText:Show()
 	end
 	-- frame.Text stays visible as the unfilled text — spell name styling block manages its alpha
-	-- Override frame.Text color to the unfilled text color setting.
-	-- Runs AFTER spell name styling has set frame.Text color, so this takes precedence.
-	if spellFS and spellFS.SetTextColor then
-		local uc = cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5, 1}
-		pcall(spellFS.SetTextColor, spellFS, uc[1] or 0.5, uc[2] or 0.5, uc[3] or 0.5, uc[4] or 1)
+	if spellFS then
+		if isGradientActive then
+			-- Gradient mode: frame.Text carries identical |cff codes as filledText
+			-- (pitfall #28). SetTextColor is overridden by embedded |cff, so dim via
+			-- SetAlpha for the backdrop effect.
+			pcall(spellFS.SetAlpha, spellFS, 0.4)
+		else
+			local uc = cfg.textFillUnfilledTextColor or {0.5, 0.5, 0.5, 1}
+			pcall(spellFS.SetAlpha, spellFS, 1)
+			if spellFS.SetTextColor then
+				pcall(spellFS.SetTextColor, spellFS, uc[1] or 0.5, uc[2] or 0.5, uc[3] or 0.5, uc[4] or 1)
+			end
+		end
 	end
 end
 
