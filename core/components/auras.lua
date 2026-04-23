@@ -10,16 +10,17 @@ local PlayerInCombat = Util.PlayerInCombat
 -- (which would taint them and cause secret value errors during Edit Mode operations)
 local auraState = setmetatable({}, { __mode = "k" })  -- frame/fs/tex/border -> state table
 
--- Active PrivateAuraTemplate pool frames (populated by PrivateAuraMixin:Update hook).
--- The privateAuraAnchor1..6 frames in DebuffFrame.auraFrames are empty placeholders — the
--- actual aura is drawn by a separate pool frame (AuraButtonArtTemplate-derived) parented
--- to the anchor, never added to any iterable DebuffFrame list. Recording them here lets
--- ApplyAuraFrameVisualsFor style the frame that actually owns DebuffBorder/Count/Duration.
-local activePrivateAuraFrames = setmetatable({}, { __mode = "k" })
-
--- Guard so we only install the PrivateAuraMixin hook once, even if ApplyStyling runs
--- multiple times (profile swap, /reload mid-session, etc.).
-local privateAuraHookInstalled = false
+-- Attempt 12 (see ADDONCONTEXT/docs/buffs&debuffs.md): private aura pool frames
+-- (PrivateAuraTemplate) are declared inside a forbidden ScopedModifier, so direct
+-- styling (SetAlpha, CreateTexture, hooksecurefunc on children) fails silently on
+-- them. Instead we re-register each BuffFramePrivateAuraAnchor with our own
+-- iconWidth/iconHeight/borderScale so Blizzard's C-side sizes the DebuffBorder
+-- correctly at pool-frame creation. Weak-key tables keyed by anchor avoid writing
+-- state to Blizzard's anchor frames (taint-safe).
+local ourAnchorIDs    = setmetatable({}, { __mode = "k" })  -- anchor -> our replacement anchorID
+local ourShadowFrames = setmetatable({}, { __mode = "k" })  -- anchor -> our UIParent-parented shadow
+local combatRetryAnchors = nil  -- set of anchors pending re-register after PLAYER_REGEN_ENABLED
+local combatRetryFrame = nil
 
 -- Config version tracking: skip re-styling auras when config hasn't changed (OPT-01)
 local configVersions = {}  -- componentId -> integer
@@ -113,6 +114,134 @@ local function updateTempEnchantBorderOverlay(aura, state, iconWidth, iconHeight
     overlay:SetPoint("CENTER", icon or aura, "CENTER")
     pcall(overlay.SetTexture, overlay, "Interface\\Buttons\\UI-TempEnchant-Border")
     overlay:Show()
+end
+
+-- Forward declaration for combat retry (defined with registerForAnchor below)
+local registerForAnchor
+
+local function ensureCombatRetryWatcher()
+    if combatRetryFrame then return end
+    combatRetryFrame = CreateFrame("Frame")
+    combatRetryFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    combatRetryFrame:SetScript("OnEvent", function()
+        if not combatRetryAnchors then return end
+        local queued = combatRetryAnchors
+        combatRetryAnchors = nil
+        for a in pairs(queued) do
+            if registerForAnchor then registerForAnchor(a) end
+        end
+    end)
+end
+
+-- Attempt 12: Register our replacement for a private aura anchor with non-square sizing.
+-- Mirrors BigWigs' pattern (BigWigs_Plugins/PrivateAuras.lua:1100-1180).
+--
+-- When the user has Icon Shape configured to non-square (tallWideRatio != 0):
+--   1. Remove Blizzard's anchor registration for this slot
+--   2. Register ours with iconWidth/iconHeight = Scoot's non-square dimensions
+--   3. Pass borderScale = h/32*2 so Blizzard's C-side sizes DebuffBorder to
+--      (w + 5*borderScale) x (h + 5*borderScale) — a non-square rectangle
+--   4. Parent the new anchor to a shadow UIParent-parented frame, NOT to Blizzard's
+--      anchor (avoids taint propagation through DebuffFrame -> EditModeManagerFrame)
+--
+-- When user switches back to square (w == h):
+--   We drop our replacement, but Blizzard's was already removed. User needs /reload
+--   to restore normal private-aura display. Documented in buffs&debuffs.md.
+registerForAnchor = function(anchor)
+    if not anchor or not anchor.unit or not anchor.auraIndex then return end
+    if not anchor.Icon then return end
+
+    -- Zero-Touch: only intervene when debuffs component is configured (past proxy DB)
+    local debuffsComp = addon.Components and addon.Components.debuffs
+    if not debuffsComp then return end
+    if debuffsComp._ScootDBProxy and debuffsComp.db == debuffsComp._ScootDBProxy then
+        return
+    end
+
+    -- Determine target dimensions from Icon Shape config
+    local w, h
+    if addon.IconRatio and addon.IconRatio.GetDimensionsForComponent then
+        w, h = addon.IconRatio.GetDimensionsForComponent("debuffs")
+    end
+    local isNonSquare = (type(w) == "number") and (type(h) == "number") and (w ~= h)
+
+    if not isNonSquare then
+        -- Square icons: no intervention needed. Drop any prior replacement.
+        local prev = ourAnchorIDs[anchor]
+        if prev then
+            pcall(C_UnitAuras.RemovePrivateAuraAnchor, prev)
+            ourAnchorIDs[anchor] = nil
+        end
+        return
+    end
+
+    -- Combat guard (mirrors BigWigs PrivateAuras.lua:1104-1106)
+    if InCombatLockdown and InCombatLockdown() then
+        combatRetryAnchors = combatRetryAnchors or {}
+        combatRetryAnchors[anchor] = true
+        ensureCombatRetryWatcher()
+        return
+    end
+
+    -- Clean up any prior replacement for this anchor
+    local prev = ourAnchorIDs[anchor]
+    if prev then
+        pcall(C_UnitAuras.RemovePrivateAuraAnchor, prev)
+        ourAnchorIDs[anchor] = nil
+    end
+
+    -- Remove Blizzard's registration. anchor.anchorID stays set (writing nil would
+    -- taint). Stale ID is harmless — Blizzard's next SetUnit calls Remove on it,
+    -- which silently no-ops (BigWigs relies on this at PrivateAuras.lua:1112).
+    if anchor.anchorID then
+        pcall(C_UnitAuras.RemovePrivateAuraAnchor, anchor.anchorID)
+    end
+
+    -- Shadow parent frame (UIParent-parented). SetAllPoints(anchor.Icon) tracks
+    -- Blizzard's anchor sizing so Edit Mode layout changes propagate automatically.
+    local shadow = ourShadowFrames[anchor]
+    if not shadow then
+        shadow = CreateFrame("Frame", nil, UIParent)
+        pcall(shadow.SetFrameStrata, shadow, "MEDIUM")
+        pcall(shadow.SetFrameLevel, shadow, 100)
+        ourShadowFrames[anchor] = shadow
+    end
+    pcall(shadow.ClearAllPoints, shadow)
+    pcall(shadow.SetAllPoints, shadow, anchor.Icon)
+
+    -- BigWigs' formula: borderScale = size/32*2. Blizzard's SetUpAnchor then sizes
+    -- DebuffBorder to (w + 5*borderScale) x (h + 5*borderScale).
+    local borderScale = h / 32 * 2
+    local args = {
+        unitToken = anchor.unit,
+        auraIndex = anchor.auraIndex,
+        parent = shadow,
+        showCountdownFrame = false,
+        showCountdownNumbers = false,
+        iconInfo = {
+            iconAnchor = {
+                point = "CENTER",
+                relativeTo = shadow,
+                relativePoint = "CENTER",
+                offsetX = 0,
+                offsetY = 0,
+            },
+            iconWidth = w,
+            iconHeight = h,
+            borderScale = borderScale,
+        },
+        durationAnchor = {
+            point = "CENTER",
+            relativeTo = shadow,
+            relativePoint = "CENTER",
+            offsetX = 0,
+            offsetY = 0,
+        },
+    }
+    local ok, newID = pcall(C_UnitAuras.AddPrivateAuraAnchor, args)
+    if ok and newID then
+        ourAnchorIDs[anchor] = newID
+    end
 end
 
 function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
@@ -473,20 +602,10 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
         end
     end
 
-    -- Private aura pool frames: the actual visible private-aura buttons, parented to
-    -- privateAuraAnchorN but not present in any DebuffFrame.*auraFrames list. Populated
-    -- by the PrivateAuraMixin:Update hook installed at init. IsShown() filters frames
-    -- released back to the pool (hidden but still referenced by the pool's inactiveObjects).
-    if componentId == "debuffs" then
-        local activePool
-        for poolFrame in pairs(activePrivateAuraFrames) do
-            if poolFrame and poolFrame.IsShown and poolFrame:IsShown() then
-                if not activePool then activePool = {} end
-                table.insert(activePool, poolFrame)
-            end
-        end
-        if activePool then addCollection(activePool) end
-    end
+    -- Attempt 12: private aura pool frames are NOT iterated here. They are forbidden
+    -- frames (see buffs&debuffs.md); styling calls would silently no-op. Instead we
+    -- re-register each BuffFramePrivateAuraAnchor via registerForAnchor() so Blizzard
+    -- sizes the pool frame's DebuffBorder correctly at creation.
 
     local currentVersion = configVersions[componentId] or 0
 
@@ -754,31 +873,40 @@ local function RefreshAuraOpacity(self)
     pcall(container.SetAlpha, container, appliedOpacity / 100)
 end
 
--- Hook PrivateAuraMixin:Update so we can discover the pool frames Blizzard creates for
--- active private auras. self inside the hook is the pool frame itself (a PrivateAuraTemplate
--- inheriting AuraButtonArtTemplate) — the frame that actually owns DebuffBorder/Count/Duration.
--- Recording it in activePrivateAuraFrames lets the next ApplyAuraFrameVisualsFor pass pick it
--- up via the shared iteration, so PCALLs 1–4 run against the right frame.
-local function installPrivateAuraHook()
-    if privateAuraHookInstalled then return end
-    if type(PrivateAuraMixin) ~= "table" or type(PrivateAuraMixin.Update) ~= "function" then
+-- Attempt 12: Install hook on BuffFramePrivateAuraAnchorMixin:SetUnit so we can
+-- re-register each anchor with our iconWidth/iconHeight/borderScale when a unit
+-- is assigned. Also do a retroactive sweep of anchors Blizzard already set up
+-- before Scoot became configured (profile switch, first settings change, etc.).
+local function installPrivateAuraAnchorHook(self)
+    if addon._PrivateAuraSetUnitHooked then return end
+    if type(BuffFramePrivateAuraAnchorMixin) ~= "table"
+       or type(BuffFramePrivateAuraAnchorMixin.SetUnit) ~= "function" then
         return
     end
+    addon._PrivateAuraSetUnitHooked = true
 
-    hooksecurefunc(PrivateAuraMixin, "Update", function(self)
-        if not self then return end
-        activePrivateAuraFrames[self] = true
-        -- Invalidate version stamp so the next pass re-styles this frame even though
-        -- the overall config version hasn't changed (pool frame may have been recycled
-        -- for a different aura type, changing dispel atlas/color).
-        local st = auraState[self]
-        if st then st.lastStyledVersion = nil end
-        if addon.Components and addon.Components.debuffs and addon.ApplyAuraFrameVisualsFor then
-            addon.ApplyAuraFrameVisualsFor(addon.Components.debuffs, false)
+    hooksecurefunc(BuffFramePrivateAuraAnchorMixin, "SetUnit", function(anchor, unit)
+        if not unit then
+            -- Blizzard cleared the anchor — drop our replacement
+            local id = ourAnchorIDs[anchor]
+            if id then
+                pcall(C_UnitAuras.RemovePrivateAuraAnchor, id)
+                ourAnchorIDs[anchor] = nil
+            end
+            return
         end
+        registerForAnchor(anchor)
     end)
 
-    privateAuraHookInstalled = true
+    -- Retroactive: SetUnit may have already fired for each of the 6 anchors before
+    -- our hook installed (e.g., user configures Scoot mid-session). Replace now.
+    if DebuffFrame and type(DebuffFrame.privateAuraAnchors) == "table" then
+        for _, anchor in pairs(DebuffFrame.privateAuraAnchors) do
+            if anchor and anchor.unit then
+                registerForAnchor(anchor)
+            end
+        end
+    end
 end
 
 local function ApplyAuraFrameStyling(self)
@@ -788,7 +916,7 @@ local function ApplyAuraFrameStyling(self)
     if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
 
     if self.id == "debuffs" then
-        installPrivateAuraHook()
+        installPrivateAuraAnchorHook(self)
     end
 
     local frameState = getState(frame)
@@ -867,6 +995,18 @@ local function ApplyAuraFrameStyling(self)
 
     -- OPT-01: Bump config version so ApplyStyling (profile switch, etc.) forces full re-style
     addon.BumpAuraConfigVersion(self.id)
+
+    -- Attempt 12: re-register private aura anchors with current Icon Shape dimensions.
+    -- BuffFramePrivateAuraAnchorMixin:SetUnit early-exits when unit hasn't changed, so
+    -- it will NOT re-fire on a settings change — we must iterate manually here. This
+    -- path also handles the initial configuration (proxy DB → real DB transition).
+    if self.id == "debuffs" and DebuffFrame and type(DebuffFrame.privateAuraAnchors) == "table" then
+        for _, anchor in pairs(DebuffFrame.privateAuraAnchors) do
+            if anchor and anchor.unit then
+                registerForAnchor(anchor)
+            end
+        end
+    end
 
     if addon and addon.ApplyAuraFrameVisualsFor then
         addon.ApplyAuraFrameVisualsFor(self)
