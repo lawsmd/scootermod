@@ -17,22 +17,22 @@ AuraTrackingUI._selectedClass = nil
 AuraTrackingUI._selectedSpellId = nil
 
 --------------------------------------------------------------------------------
--- Anchor Option Tables (for Position DualSelector)
+-- Anchor / Replacement Style Option Tables
 --------------------------------------------------------------------------------
 
-local INSIDE_VALUES = {
+local ANCHOR_VALUES = {
     TOPLEFT = "Top-Left", TOP = "Top", TOPRIGHT = "Top-Right",
     LEFT = "Left", CENTER = "Center", RIGHT = "Right",
     BOTTOMLEFT = "Bottom-Left", BOTTOM = "Bottom", BOTTOMRIGHT = "Bottom-Right",
 }
-local INSIDE_ORDER = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+local ANCHOR_ORDER = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
 
-local OUTSIDE_VALUES = {
-    TOPLEFT = "Top-Left", TOP = "Top", TOPRIGHT = "Top-Right",
-    RIGHT = "Right", BOTTOMRIGHT = "Bottom-Right",
-    BOTTOM = "Bottom", BOTTOMLEFT = "Bottom-Left", LEFT = "Left",
+local REPLACEMENT_VALUES = {
+    none       = "None",
+    solidBlack = "Solid Black",
+    numbered   = "Numbered Boxes",
 }
-local OUTSIDE_ORDER = { "TOPLEFT", "TOP", "TOPRIGHT", "RIGHT", "BOTTOMRIGHT", "BOTTOM", "BOTTOMLEFT", "LEFT" }
+local REPLACEMENT_ORDER = { "none", "solidBlack", "numbered" }
 
 --------------------------------------------------------------------------------
 -- DB Helpers
@@ -58,8 +58,8 @@ local SPELL_DEFAULTS = addon.AuraTracking and addon.AuraTracking.SPELL_DEFAULTS 
     iconCustomColor = { 1, 1, 1, 1 },
     iconScale = 100,
     showDuration = true,
-    position = "inside",
-    anchor = "TOPRIGHT",
+    anchor = "BOTTOMRIGHT",
+    rank = 1,
     offsetX = 0,
     offsetY = 0,
 }
@@ -458,53 +458,38 @@ function AuraTrackingUI.Render(panel, scrollContent)
     end
 
     --------------------------------------------------------------------------
-    -- Aura Scale Slider (with explainer description)
+    -- 12.0.5 limitation note (single yellow paragraph, no header)
     --------------------------------------------------------------------------
 
-    builder:AddSlider({
-        key = "auraScale",
-        label = "Blizzard Aura Scale",
-        description = "Add custom icons for tracking non-secret Auras like popular Healing Spells. "
-            .. "Scoot cannot hide the icons, but it can shrink them so much they disappear "
-            .. "- this will apply to ALL Blizzard Party/Raid Frame Buff Icons.",
-        min = 0,
-        max = 100,
-        step = 1,
-        minLabel = "Hidden",
-        maxLabel = "100%",
-        displaySuffix = "%",
+    builder:AddDescription(
+        "In patch 12.0.5, Blizzard moved party/raid buff rendering into a protected internal system, making it impossible for addons to hide or shrink those icons. "
+        .. "Scoot compensates by auto-grouping its custom icons and letting you replace Blizzard's icons with a uniform overlay so your tracked icons stand out.",
+        { color = {1, 0.82, 0}, topPadding = 4, bottomPadding = -16 }
+    )
+
+    --------------------------------------------------------------------------
+    -- Replace Blizzard Icons with (selector)
+    --------------------------------------------------------------------------
+
+    builder:AddSelector({
+        key = "replacementStyle",
+        label = "Replace Blizzard icons with:",
+        description = "Overlay visual drawn on top of whichever buff slots Blizzard is actively showing. "
+            .. "The native icon becomes uniform chrome so your custom Scoot icons stand out.",
+        values = REPLACEMENT_VALUES,
+        order = REPLACEMENT_ORDER,
         get = function()
             local at = ensureDB()
-            return (at and at.auraScale) or 100
+            return (at and at.replacementStyle) or "none"
         end,
         set = function(v)
             local at = ensureDB()
-            if at then at.auraScale = v end
+            if at then at.replacementStyle = v end
             if addon.AuraTracking and addon.AuraTracking.RefreshBuffStripScaling then
                 addon.AuraTracking.RefreshBuffStripScaling()
             end
         end,
     })
-
-    -- Plain 1px divider line (no section header/chevron)
-    do
-        local theme = addon.UI.Theme
-        local ar, ag, ab = 0.20, 0.90, 0.30
-        if theme and theme.GetAccentColor then
-            ar, ag, ab = theme:GetAccentColor()
-        end
-        local dividerSpacing = 8
-        builder._currentY = builder._currentY - dividerSpacing
-        local divider = CreateFrame("Frame", nil, scrollContent)
-        divider:SetHeight(1)
-        divider:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 12, builder._currentY)
-        divider:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -12, builder._currentY)
-        local divTex = divider:CreateTexture(nil, "BORDER")
-        divTex:SetAllPoints()
-        divTex:SetColorTexture(ar, ag, ab, 0.3)
-        table.insert(builder._controls, divider)
-        builder._currentY = builder._currentY - 1 - dividerSpacing
-    end
 
     --------------------------------------------------------------------------
     -- Class Selector (centered, emphasized, 400px wide)
@@ -594,167 +579,424 @@ function AuraTrackingUI.Render(panel, scrollContent)
             emphasized = true,
             get = function() return getSetting(selectedId, "enabled") end,
             set = function(v)
-                setSetting(selectedId, "enabled", v)
+                local cfg = ensureSpellConfig(selectedId)
+                if v then
+                    -- Enabling: land at end of current anchor's list (BOTTOMRIGHT default
+                    -- when the aura has never been configured before). AutoSlotAtEnd
+                    -- writes anchor + rank, so we set enabled last.
+                    local targetAnchor = (cfg and cfg.anchor) or "BOTTOMRIGHT"
+                    if HA and HA.AutoSlotAtEnd then
+                        HA.AutoSlotAtEnd(selectedId, targetAnchor)
+                    end
+                    if cfg then cfg.enabled = true end
+                else
+                    -- Disabling: clear enabled, then re-sequence the anchor so the
+                    -- remaining enabled auras keep contiguous 1..N ranks.
+                    local oldAnchor = (cfg and cfg.anchor) or "BOTTOMRIGHT"
+                    if cfg then cfg.enabled = false end
+                    if HA and HA.ReindexAnchor then
+                        HA.ReindexAnchor(oldAnchor)
+                    end
+                end
+                if HA and HA.OnConfigChanged then HA.OnConfigChanged() end
                 AuraTrackingUI.Render(panel, scrollContent)
             end,
         })
 
-        -- Track from All Players toggle
-        builder:AddToggle({
-            key = "trackAllSources",
-            label = "Track from All Players",
-            description = "Show this icon when the aura is applied by any player, not just you.",
-            get = function() return getSetting(selectedId, "trackAllSources") end,
-            set = function(v)
-                setSetting(selectedId, "trackAllSources", v)
-            end,
-            disabled = function() return not getSetting(selectedId, "enabled") end,
-        })
-
-        -- Icon Style row (custom control)
-        local iconStyleRow = CreateIconStyleRow(scrollContent, selectedId, builder)
-        if iconStyleRow then
-            -- Add spacing
-            if #builder._controls > 0 then
-                builder._currentY = builder._currentY - 12
-            end
-            iconStyleRow:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 8, builder._currentY)
-            iconStyleRow:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -8, builder._currentY)
-            table.insert(builder._controls, iconStyleRow)
-            builder._currentY = builder._currentY - iconStyleRow:GetHeight()
-
-            -- Disabled state
-            local isEnabled = getSetting(selectedId, "enabled")
-            if not isEnabled then
-                local theme = addon.UI.Theme
-                local dimR, dimG, dimB = 0.5, 0.5, 0.5
-                if theme and theme.GetDimTextColor then
-                    dimR, dimG, dimB = theme:GetDimTextColor()
-                end
-                iconStyleRow._label:SetTextColor(dimR, dimG, dimB, 0.35)
-                iconStyleRow._selectorBtn:SetAlpha(0.35)
-                iconStyleRow._selectorBtn:EnableMouse(false)
-                iconStyleRow._rowBorder:SetColorTexture(dimR, dimG, dimB, 0.1)
-            end
-        end
-
-        -- Icon Color (SelectorColorPicker with Custom/Rainbow)
         local isEnabled = getSetting(selectedId, "enabled")
 
-        builder:AddSelectorColorPicker({
-            key = "iconColor",
-            label = "Icon Color",
-            values = { original = "Texture Original", custom = "Custom", rainbow = "Rainbow" },
-            order = { "original", "custom", "rainbow" },
-            customValue = "custom",
-            hasAlpha = true,
-            get = function() return getSetting(selectedId, "iconColor") or "original" end,
-            set = function(v)
-                setSetting(selectedId, "iconColor", v)
-            end,
-            getColor = function()
-                local c = getSetting(selectedId, "iconCustomColor") or { 1, 1, 1, 1 }
-                return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
-            end,
-            setColor = function(r, g, b, a)
-                setSetting(selectedId, "iconCustomColor", { r, g, b, a })
-            end,
-            disabled = function() return not isEnabled end,
-        })
+        ------------------------------------------------------------------
+        -- Tabbed per-spell section
+        ------------------------------------------------------------------
+        local stackable = HA and HA.STACKABLE_SPELLS and HA.STACKABLE_SPELLS[selectedId] or false
 
-        -- Icon Scale
-        builder:AddSlider({
-            key = "iconScale",
-            label = "Icon Scale",
-            min = 25,
-            max = 300,
-            step = 5,
-            get = function() return getSetting(selectedId, "iconScale") or 100 end,
-            set = function(v)
-                setSetting(selectedId, "iconScale", v)
-            end,
-            displaySuffix = "%",
-            disabled = function() return not isEnabled end,
-        })
+        local tabs = {
+            { key = "settings",    label = "Settings" },
+            { key = "style",       label = "Style" },
+            { key = "sizing",      label = "Sizing" },
+            { key = "positioning", label = "Positioning" },
+        }
+        if stackable then
+            table.insert(tabs, { key = "stacksText", label = "Stacks Text" })
+        end
 
-        -- Show Duration (drain effect for static icons)
-        builder:AddToggle({
-            key = "showDuration",
-            label = "Show Duration",
-            description = "Display a drain effect on the icon that reveals a dark backdrop as the aura's remaining duration decreases.",
-            get = function()
-                local v = getSetting(selectedId, "showDuration")
-                if v == nil then return true end
-                return v
-            end,
-            set = function(v)
-                setSetting(selectedId, "showDuration", v)
-            end,
-            disabled = function() return not isEnabled end,
-        })
+        builder:AddTabbedSection({
+            tabs = tabs,
+            componentId = "gfAuraTracking",
+            sectionKey = "perSpell_" .. selectedId,
+            defaultTab = "settings",
+            buildContent = {
+                --------------------------------------------------------
+                -- Settings
+                --------------------------------------------------------
+                settings = function(tabContent, tabBuilder)
+                    tabBuilder:AddToggle({
+                        key = "trackAllSources",
+                        label = "Track from All Players",
+                        description = "Show this icon when the aura is applied by any player, not just you.",
+                        get = function() return getSetting(selectedId, "trackAllSources") end,
+                        set = function(v) setSetting(selectedId, "trackAllSources", v) end,
+                        disabled = function() return not getSetting(selectedId, "enabled") end,
+                    })
+                    tabBuilder:AddToggle({
+                        key = "showDuration",
+                        label = "Show Duration",
+                        description = "Display a drain effect on the icon that reveals a dark backdrop as the aura's remaining duration decreases.",
+                        get = function()
+                            local v = getSetting(selectedId, "showDuration")
+                            if v == nil then return true end
+                            return v
+                        end,
+                        set = function(v) setSetting(selectedId, "showDuration", v) end,
+                        disabled = function() return not isEnabled end,
+                    })
+                end,
 
-        -- Position (DualSelector: Inside/Outside + anchor points)
-        local currentPos = getSetting(selectedId, "position") or "inside"
-        local initialBValues = currentPos == "outside" and OUTSIDE_VALUES or INSIDE_VALUES
-        local initialBOrder = currentPos == "outside" and OUTSIDE_ORDER or INSIDE_ORDER
+                --------------------------------------------------------
+                -- Style (icon style picker + icon color)
+                --------------------------------------------------------
+                style = function(tabContent, tabBuilder)
+                    -- Icon Style custom row, parented to tabContent
+                    local iconStyleRow = CreateIconStyleRow(tabContent, selectedId, tabBuilder)
+                    if iconStyleRow then
+                        if #tabBuilder._controls > 0 then
+                            tabBuilder._currentY = tabBuilder._currentY - 12
+                        end
+                        iconStyleRow:SetPoint("TOPLEFT", tabContent, "TOPLEFT", 0, tabBuilder._currentY)
+                        iconStyleRow:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", 0, tabBuilder._currentY)
+                        table.insert(tabBuilder._controls, iconStyleRow)
+                        tabBuilder._currentY = tabBuilder._currentY - iconStyleRow:GetHeight()
 
-        builder:AddDualSelector({
-            label = "Position",
-            key = "positionDual",
-            maxContainerWidth = 420,
-            selectorA = {
-                values = { inside = "Inside Frame", outside = "Outside Frame" },
-                order = { "inside", "outside" },
-                get = function() return getSetting(selectedId, "position") or "inside" end,
-                set = function(v)
-                    setSetting(selectedId, "position", v)
-                    local dualSelector = builder:GetControl("positionDual")
-                    if dualSelector then
-                        if v == "outside" then
-                            dualSelector:SetOptionsB(OUTSIDE_VALUES, OUTSIDE_ORDER)
-                        else
-                            dualSelector:SetOptionsB(INSIDE_VALUES, INSIDE_ORDER)
+                        if not isEnabled then
+                            local theme = addon.UI.Theme
+                            local dimR, dimG, dimB = 0.5, 0.5, 0.5
+                            if theme and theme.GetDimTextColor then
+                                dimR, dimG, dimB = theme:GetDimTextColor()
+                            end
+                            iconStyleRow._label:SetTextColor(dimR, dimG, dimB, 0.35)
+                            iconStyleRow._selectorBtn:SetAlpha(0.35)
+                            iconStyleRow._selectorBtn:EnableMouse(false)
+                            iconStyleRow._rowBorder:SetColorTexture(dimR, dimG, dimB, 0.1)
                         end
                     end
-                end,
-            },
-            selectorB = {
-                values = initialBValues,
-                order = initialBOrder,
-                get = function()
-                    return getSetting(selectedId, "anchor") or "TOPRIGHT"
-                end,
-                set = function(v)
-                    setSetting(selectedId, "anchor", v)
-                end,
-            },
-            disabled = function() return not isEnabled end,
-        })
 
-        -- Offset (DualSlider: X/Y)
-        builder:AddDualSlider({
-            label = "Offset",
-            sliderA = {
-                axisLabel = "X",
-                min = -50,
-                max = 50,
-                step = 1,
-                get = function() return getSetting(selectedId, "offsetX") or 0 end,
-                set = function(v)
-                    setSetting(selectedId, "offsetX", v)
+                    tabBuilder:AddSelectorColorPicker({
+                        key = "iconColor",
+                        label = "Icon Color",
+                        values = { original = "Texture Original", custom = "Custom", rainbow = "Rainbow" },
+                        order = { "original", "custom", "rainbow" },
+                        customValue = "custom",
+                        hasAlpha = true,
+                        get = function() return getSetting(selectedId, "iconColor") or "original" end,
+                        set = function(v) setSetting(selectedId, "iconColor", v) end,
+                        getColor = function()
+                            local c = getSetting(selectedId, "iconCustomColor") or { 1, 1, 1, 1 }
+                            return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                        end,
+                        setColor = function(r, g, b, a)
+                            setSetting(selectedId, "iconCustomColor", { r, g, b, a })
+                        end,
+                        disabled = function() return not isEnabled end,
+                    })
+                end,
+
+                --------------------------------------------------------
+                -- Sizing
+                --------------------------------------------------------
+                sizing = function(tabContent, tabBuilder)
+                    tabBuilder:AddSlider({
+                        key = "iconScale",
+                        label = "Icon Scale",
+                        min = 25,
+                        max = 300,
+                        step = 5,
+                        get = function() return getSetting(selectedId, "iconScale") or 100 end,
+                        set = function(v) setSetting(selectedId, "iconScale", v) end,
+                        displaySuffix = "%",
+                        disabled = function() return not isEnabled end,
+                    })
+                end,
+
+                --------------------------------------------------------
+                -- Positioning (anchor+priority, group spacing, offset)
+                --------------------------------------------------------
+                positioning = function(tabContent, tabBuilder)
+                    local Controls = addon.UI and addon.UI.Controls
+                    local theme = addon.UI and addon.UI.Theme
+
+                    local rowHeight = 54
+                    local topLabelY = -6
+                    local controlY = -24
+
+                    local row = CreateFrame("Frame", nil, tabContent)
+                    row:SetHeight(rowHeight)
+
+                    local accR, accG, accB = 0.2, 0.9, 0.3
+                    if theme and theme.GetAccentColor then accR, accG, accB = theme:GetAccentColor() end
+                    local dimR, dimG, dimB = 0.5, 0.5, 0.5
+                    if theme and theme.GetDimTextColor then dimR, dimG, dimB = theme:GetDimTextColor() end
+
+                    local function headerColor()
+                        if isEnabled then return { accR, accG, accB } end
+                        return { dimR, dimG, dimB }
+                    end
+
+                    local anchorLabel = row:CreateFontString(nil, "OVERLAY")
+                    if theme and theme.ApplyLabelFont then
+                        theme:ApplyLabelFont(anchorLabel, 12)
+                    else
+                        anchorLabel:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+                    end
+                    anchorLabel:SetPoint("TOPLEFT", row, "TOPLEFT", 0, topLabelY)
+                    anchorLabel:SetText("Anchor")
+                    local hc = headerColor()
+                    anchorLabel:SetTextColor(hc[1], hc[2], hc[3], 1)
+
+                    local anchorSel
+                    if Controls and Controls._CreateMiniSelector then
+                        anchorSel = Controls._CreateMiniSelector({
+                            values = ANCHOR_VALUES,
+                            order  = ANCHOR_ORDER,
+                            get = function() return getSetting(selectedId, "anchor") or "BOTTOMRIGHT" end,
+                            set = function(v)
+                                local cfg = ensureSpellConfig(selectedId)
+                                if not cfg then return end
+                                local oldAnchor = rawget(cfg, "anchor") or cfg.anchor or "BOTTOMRIGHT"
+                                if oldAnchor == v then return end
+                                if cfg.enabled and HA and HA.ReindexAnchor and HA.AutoSlotAtEnd then
+                                    HA.ReindexAnchor(oldAnchor)
+                                    HA.AutoSlotAtEnd(selectedId, v)
+                                else
+                                    cfg.anchor = v
+                                end
+                                if HA and HA.OnConfigChanged then HA.OnConfigChanged() end
+                                AuraTrackingUI.Render(panel, scrollContent)
+                            end,
+                        }, row, theme, false)
+                        anchorSel:SetWidth(190)
+                        anchorSel:SetPoint("TOPLEFT", row, "TOPLEFT", 0, controlY)
+                    end
+
+                    local rankSel
+                    if Controls and Controls.CreateRankSelector then
+                        rankSel = Controls:CreateRankSelector({
+                            parent = row,
+                            count = 6,
+                            labelText = "Priority",
+                            get = function()
+                                local r = tonumber(getSetting(selectedId, "rank"))
+                                if not r or r < 1 then r = 1 end
+                                return r
+                            end,
+                            currentSpellId = function() return selectedId end,
+                            isInGroup = function()
+                                if not isEnabled then return false end
+                                local cfg = ensureSpellConfig(selectedId)
+                                return cfg and cfg.enabled and true or false
+                            end,
+                            spellIdAt = function(rank)
+                                if not HA or not HA.EnabledInAnchor then return nil end
+                                local cfg = ensureSpellConfig(selectedId)
+                                local anchor = (cfg and cfg.anchor) or "BOTTOMRIGHT"
+                                local cls = HA.SPELL_TO_CLASS and HA.SPELL_TO_CLASS[selectedId] or nil
+                                local list = HA.EnabledInAnchor(anchor, nil, cls)
+                                local entry = list[rank]
+                                return entry and entry.spellId or nil
+                            end,
+                            set = function(newRank)
+                                if not isEnabled then return end
+                                local cfg = ensureSpellConfig(selectedId)
+                                local anchor = (cfg and cfg.anchor) or "BOTTOMRIGHT"
+                                if HA and HA.ReorderRank then
+                                    HA.ReorderRank(anchor, selectedId, newRank)
+                                end
+                                if HA and HA.OnConfigChanged then HA.OnConfigChanged() end
+                                AuraTrackingUI.Render(panel, scrollContent)
+                            end,
+                        })
+                        rankSel:SetPoint("TOPLEFT", row, "TOPLEFT", 220, controlY + 4)
+                    end
+
+                    if #tabBuilder._controls > 0 then
+                        tabBuilder._currentY = tabBuilder._currentY - 12
+                    end
+                    row:SetPoint("TOPLEFT", tabContent, "TOPLEFT", 0, tabBuilder._currentY)
+                    row:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", 0, tabBuilder._currentY)
+                    table.insert(tabBuilder._controls, row)
+                    tabBuilder._currentY = tabBuilder._currentY - rowHeight
+
+                    -- Position Group Spacing (per-anchor)
+                    local cfg = ensureSpellConfig(selectedId)
+                    local curAnchor = (cfg and cfg.anchor) or "BOTTOMRIGHT"
+                    local anchorLabelStr = ANCHOR_VALUES[curAnchor] or curAnchor
+                    tabBuilder:AddSlider({
+                        key = "positionGroupSpacing_" .. selectedId,
+                        label = "Position Group Spacing (" .. anchorLabelStr .. ")",
+                        description = "Extra pixels between consecutive icons sharing this anchor. "
+                            .. "Shared across every aura assigned to this anchor group.",
+                        min = -5,
+                        max = 15,
+                        step = 1,
+                        displaySuffix = " px",
+                        get = function()
+                            local at = ensureDB()
+                            local map = at and at.positionGroupSpacing
+                            if type(map) == "table" and type(map[curAnchor]) == "number" then
+                                return map[curAnchor]
+                            end
+                            return 2
+                        end,
+                        set = function(v)
+                            local at = ensureDB()
+                            if not at then return end
+                            if type(at.positionGroupSpacing) ~= "table" then
+                                at.positionGroupSpacing = {}
+                            end
+                            at.positionGroupSpacing[curAnchor] = v
+                            if HA and HA.OnConfigChanged then HA.OnConfigChanged() end
+                        end,
+                        disabled = function() return not isEnabled end,
+                    })
+
+                    -- Extra breathing room between Position Group Spacing's divider
+                    -- and the Offset DualSlider. The default ITEM_SPACING is tight
+                    -- against the slider's bottom rule; a small spacer separates them.
+                    tabBuilder:AddSpacer(8)
+
+                    tabBuilder:AddDualSlider({
+                        label = "Offset",
+                        sliderA = {
+                            axisLabel = "X",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function() return getSetting(selectedId, "offsetX") or 0 end,
+                            set = function(v) setSetting(selectedId, "offsetX", v) end,
+                        },
+                        sliderB = {
+                            axisLabel = "Y",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function() return getSetting(selectedId, "offsetY") or 0 end,
+                            set = function(v) setSetting(selectedId, "offsetY", v) end,
+                        },
+                        disabled = function() return not isEnabled end,
+                    })
+                end,
+
+                --------------------------------------------------------
+                -- Stacks Text (only inserted when stackable == true)
+                --------------------------------------------------------
+                stacksText = function(tabContent, tabBuilder)
+                    local Helpers = addon.UI.Settings and addon.UI.Settings.Helpers or GF
+                    local fontStyleValues = (Helpers and Helpers.fontStyleValues) or GF.fontStyleValues or {
+                        NONE = "Regular", OUTLINE = "Outline", THICKOUTLINE = "Thick Outline",
+                    }
+                    local fontStyleOrder = (Helpers and Helpers.fontStyleOrder) or GF.fontStyleOrder or {
+                        "NONE", "OUTLINE", "THICKOUTLINE",
+                    }
+                    local DEFAULTS = (HA and HA.STACKS_TEXT_DEFAULTS) or {
+                        fontFace = "FRIZQT__", size = 12, style = "OUTLINE",
+                        colorMode = "default", customColor = { 1, 1, 1, 1 },
+                        anchor = "BOTTOMRIGHT", offsetX = 0, offsetY = 0,
+                    }
+
+                    local function getST(key)
+                        local cfg = ensureSpellConfig(selectedId)
+                        local st = cfg and rawget(cfg, "stacksText")
+                        if st and st[key] ~= nil then return st[key] end
+                        return DEFAULTS[key]
+                    end
+
+                    local function setST(key, value)
+                        local cfg = ensureSpellConfig(selectedId)
+                        if not cfg then return end
+                        if not rawget(cfg, "stacksText") then
+                            cfg.stacksText = {}
+                        end
+                        cfg.stacksText[key] = value
+                        if HA and HA.OnConfigChanged then HA.OnConfigChanged() end
+                    end
+
+                    tabBuilder:AddFontSelector({
+                        label = "Font",
+                        description = "Font used for the stack count text.",
+                        get = function() return getST("fontFace") end,
+                        set = function(v) setST("fontFace", v) end,
+                        disabled = function() return not isEnabled end,
+                    })
+
+                    tabBuilder:AddSlider({
+                        label = "Font Size",
+                        min = 6,
+                        max = 32,
+                        step = 1,
+                        get = function() return getST("size") end,
+                        set = function(v) setST("size", v) end,
+                        disabled = function() return not isEnabled end,
+                    })
+
+                    tabBuilder:AddSelector({
+                        label = "Font Style",
+                        values = fontStyleValues,
+                        order = fontStyleOrder,
+                        get = function() return getST("style") end,
+                        set = function(v) setST("style", v) end,
+                        disabled = function() return not isEnabled end,
+                    })
+
+                    tabBuilder:AddSelectorColorPicker({
+                        key = "stacksTextColor",
+                        label = "Font Color",
+                        values = { ["default"] = "Default (White)", ["custom"] = "Custom" },
+                        order = { "default", "custom" },
+                        customValue = "custom",
+                        hasAlpha = true,
+                        get = function() return getST("colorMode") end,
+                        set = function(v) setST("colorMode", v) end,
+                        getColor = function()
+                            local c = getST("customColor") or { 1, 1, 1, 1 }
+                            return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+                        end,
+                        setColor = function(r, g, b, a)
+                            setST("customColor", { r, g, b, a })
+                        end,
+                        disabled = function() return not isEnabled end,
+                    })
+
+                    tabBuilder:AddSelector({
+                        label = "Position",
+                        description = "Where the stacks text sits within the icon's bounding box.",
+                        values = ANCHOR_VALUES,
+                        order = ANCHOR_ORDER,
+                        get = function() return getST("anchor") end,
+                        set = function(v) setST("anchor", v) end,
+                        disabled = function() return not isEnabled end,
+                    })
+
+                    tabBuilder:AddDualSlider({
+                        label = "Offset",
+                        sliderA = {
+                            axisLabel = "X",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function() return getST("offsetX") end,
+                            set = function(v) setST("offsetX", v) end,
+                        },
+                        sliderB = {
+                            axisLabel = "Y",
+                            min = -50,
+                            max = 50,
+                            step = 1,
+                            get = function() return getST("offsetY") end,
+                            set = function(v) setST("offsetY", v) end,
+                        },
+                        disabled = function() return not isEnabled end,
+                    })
                 end,
             },
-            sliderB = {
-                axisLabel = "Y",
-                min = -50,
-                max = 50,
-                step = 1,
-                get = function() return getSetting(selectedId, "offsetY") or 0 end,
-                set = function(v)
-                    setSetting(selectedId, "offsetY", v)
-                end,
-            },
-            disabled = function() return not isEnabled end,
         })
     end
 

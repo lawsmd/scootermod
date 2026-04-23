@@ -45,13 +45,97 @@ function GF.ensureRaidDB()
     return db.groupFrames.raid
 end
 
+local OUTSIDE_TO_INSIDE_ANCHOR = {
+    TOPLEFT     = "TOPLEFT",
+    TOP         = "TOP",
+    TOPRIGHT    = "TOPRIGHT",
+    RIGHT       = "RIGHT",
+    BOTTOMRIGHT = "BOTTOMRIGHT",
+    BOTTOM      = "BOTTOM",
+    BOTTOMLEFT  = "BOTTOMLEFT",
+    LEFT        = "LEFT",
+}
+
+local ALL_ANCHORS = {
+    "TOPLEFT", "TOP", "TOPRIGHT",
+    "LEFT", "CENTER", "RIGHT",
+    "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT",
+}
+
 function GF.ensureAuraTrackingDB()
     local db = addon and addon.db and addon.db.profile
     if not db then return nil end
     db.groupFrames = db.groupFrames or {}
     db.groupFrames.auraTracking = db.groupFrames.auraTracking or {}
     db.groupFrames.auraTracking.spells = db.groupFrames.auraTracking.spells or {}
-    return db.groupFrames.auraTracking
+
+    local at = db.groupFrames.auraTracking
+
+    -- 12.0.5 drops every legacy buff-hiding field. Blizzard moved CompactUnitFrame
+    -- buff rendering into a protected C-side system addons can't hide or shrink.
+    at.auraScale = nil
+    at.hideBlizzardBuffs = nil
+
+    -- Per-spell migration: the dual-selector `position` ("inside"/"outside")
+    -- field is replaced by a single inside-frame anchor, and ranks are
+    -- assigned by the auto-slot helpers. `offsetX` / `offsetY` live on as a
+    -- per-icon fine-tune applied on top of the auto-placed position.
+    for _, spell in pairs(at.spells) do
+        if type(spell) == "table" then
+            if spell.position == "outside" and type(spell.anchor) == "string" then
+                spell.anchor = OUTSIDE_TO_INSIDE_ANCHOR[spell.anchor] or spell.anchor
+            end
+            spell.position = nil
+            -- Leave rank nil for disabled auras; for enabled auras the next block
+            -- assigns contiguous 1..N sequential ranks per anchor.
+        end
+    end
+
+    -- Migration: positionGroupSpacing scalar → per-anchor table. If an older
+    -- profile recorded a single value (the previous global slider), spread it
+    -- to every anchor so users don't lose their tuning.
+    if type(at.positionGroupSpacing) == "number" then
+        local prev = at.positionGroupSpacing
+        at.positionGroupSpacing = {}
+        for _, anchor in ipairs(ALL_ANCHORS) do
+            at.positionGroupSpacing[anchor] = prev
+        end
+    end
+
+    -- Rank re-sequencing: for each (anchor, class), sort enabled auras by
+    -- (rank asc, spellId asc) and assign ranks 1..N contiguously. Scoping by
+    -- class prevents cross-class leakage — a Druid's BOTTOMRIGHT list and a
+    -- Shaman's BOTTOMRIGHT list are independent 1..N sequences. Fixes older
+    -- profiles where enabled auras shared rank=1 from the pre-auto-slot
+    -- default AND cleans up cross-class rank collisions from the earlier
+    -- single-list model.
+    local HA = addon.AuraTracking
+    local spellToClass = HA and HA.SPELL_TO_CLASS or nil
+    if spellToClass then
+        local bucketsByKey = {}
+        for spellId, spell in pairs(at.spells) do
+            if type(spell) == "table" and spell.enabled then
+                local anchor = spell.anchor or "BOTTOMRIGHT"
+                local cls = spellToClass[spellId] or "__unknown__"
+                local key = anchor .. "|" .. cls
+                bucketsByKey[key] = bucketsByKey[key] or {}
+                table.insert(bucketsByKey[key], { spellId = spellId, cfg = spell })
+            end
+        end
+        for _, bucket in pairs(bucketsByKey) do
+            table.sort(bucket, function(a, b)
+                local ra = tonumber(a.cfg.rank) or 0
+                local rb = tonumber(b.cfg.rank) or 0
+                if ra ~= rb then return ra < rb end
+                return a.spellId < b.spellId
+            end)
+            for i, entry in ipairs(bucket) do
+                entry.cfg.rank = i
+            end
+        end
+    end
+
+    return at
 end
 
 function GF.ensurePartyTextDB(textKey)

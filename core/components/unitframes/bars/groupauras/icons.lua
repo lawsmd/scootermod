@@ -23,37 +23,57 @@ local MAX_ICON_SIZE = 64
 -- Anchor Maps
 --------------------------------------------------------------------------------
 
--- Inside frame: icon anchors to matching point on the group frame
+-- Inside frame: icon anchors to matching point on the group frame. 9 values.
+-- Outside-frame anchoring was removed in the 12.0.5 rework (see gfauratracking.md
+-- Background > 12.0.5 architectural lockdown). Visual conflict with Blizzard's
+-- native icons is now handled via the replacementStyle overlay layer in
+-- buffstrip.lua, not by moving Scoot icons outside the frame.
 HA.INSIDE_ANCHOR_VALUES = {
     TOPLEFT = "Top-Left", TOP = "Top", TOPRIGHT = "Top-Right",
     LEFT = "Left", CENTER = "Center", RIGHT = "Right",
     BOTTOMLEFT = "Bottom-Left", BOTTOM = "Bottom", BOTTOMRIGHT = "Bottom-Right",
 }
+table.freeze(HA.INSIDE_ANCHOR_VALUES)
 HA.INSIDE_ANCHOR_ORDER = {
     "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT",
 }
+table.freeze(HA.INSIDE_ANCHOR_ORDER)
 
--- Outside frame: icon anchors outside the group frame edge
-HA.OUTSIDE_ANCHOR_VALUES = {
-    TOPLEFT = "Top-Left", TOP = "Top", TOPRIGHT = "Top-Right",
-    RIGHT = "Right", BOTTOMRIGHT = "Bottom-Right",
-    BOTTOM = "Bottom", BOTTOMLEFT = "Bottom-Left", LEFT = "Left",
+-- Horizontal flow direction per anchor. Right-edge anchors grow leftward (rank 2
+-- sits to the left of rank 1). All other anchors grow rightward.
+local ANCHOR_DIRECTION = {
+    TOPLEFT     =  1,
+    TOP         =  1,
+    TOPRIGHT    = -1,
+    LEFT        =  1,
+    CENTER      =  1,
+    RIGHT       = -1,
+    BOTTOMLEFT  =  1,
+    BOTTOM      =  1,
+    BOTTOMRIGHT = -1,
 }
-HA.OUTSIDE_ANCHOR_ORDER = {
-    "TOPLEFT", "TOP", "TOPRIGHT", "RIGHT", "BOTTOMRIGHT", "BOTTOM", "BOTTOMLEFT", "LEFT",
-}
+table.freeze(ANCHOR_DIRECTION)
 
--- Maps outside anchor keys to SetPoint arguments
-local OUTSIDE_ANCHOR_MAP = {
-    TOPLEFT     = { point = "BOTTOMRIGHT", relPoint = "TOPLEFT" },
-    TOP         = { point = "BOTTOM",      relPoint = "TOP" },
-    TOPRIGHT    = { point = "BOTTOMLEFT",  relPoint = "TOPRIGHT" },
-    RIGHT       = { point = "LEFT",        relPoint = "RIGHT" },
-    BOTTOMRIGHT = { point = "TOPLEFT",     relPoint = "BOTTOMRIGHT" },
-    BOTTOM      = { point = "TOP",         relPoint = "BOTTOM" },
-    BOTTOMLEFT  = { point = "TOPRIGHT",    relPoint = "BOTTOMLEFT" },
-    LEFT        = { point = "RIGHT",       relPoint = "LEFT" },
+-- Vertical flow direction per anchor. Bottom-edge anchors grow upward (rank 4+
+-- wraps to a row ABOVE the first row), keeping icons away from the bottom edge.
+-- Every other anchor grows downward (row 2+ sits BELOW row 1). Mirrors Blizzard's
+-- Legacy layout which is BottomRightToTopLeft for Buffs.
+local ROW_GROWTH_DIR = {
+    TOPLEFT     = -1,
+    TOP         = -1,
+    TOPRIGHT    = -1,
+    LEFT        = -1,
+    CENTER      = -1,
+    RIGHT       = -1,
+    BOTTOMLEFT  =  1,
+    BOTTOM      =  1,
+    BOTTOMRIGHT =  1,
 }
+table.freeze(ROW_GROWTH_DIR)
+
+-- Wrap to a new row after this many icons. Matches Blizzard's Legacy /
+-- BuffsRightDebuffsLeft layout (3 cols × 2 rows = up to 6 buffs).
+local COLS_PER_ROW = 3
 
 --------------------------------------------------------------------------------
 -- Icon Frame Pool
@@ -187,6 +207,9 @@ local function GetSpellConfig(spellId)
     end
     return setmetatable(spells[configId], { __index = HA.SPELL_DEFAULTS })
 end
+
+-- Exported for ReflowIconsForFrame to resolve per-spell anchor/rank config.
+HA._GetSpellConfig = GetSpellConfig
 
 function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame, unit)
     if not iconFrame or not spellId then return end
@@ -427,6 +450,47 @@ function HA.StyleIcon(iconFrame, spellId, auraData, groupFrame, unit)
     -- Stack count
     if auraData and auraData.applications and auraData.applications > 1 then
         iconFrame.CountText:SetText(tostring(auraData.applications))
+
+        -- Apply per-spell stacksText styling when configured. Defaults from
+        -- HA.STACKS_TEXT_DEFAULTS preserve the historical look (white OUTLINE
+        -- 12pt at BOTTOMRIGHT) when the user hasn't touched the tab.
+        local st = config and rawget(config, "stacksText")
+        local defaults = HA.STACKS_TEXT_DEFAULTS or {}
+        local function stGet(k)
+            if st and st[k] ~= nil then return st[k] end
+            return defaults[k]
+        end
+
+        local fontFace = stGet("fontFace") or "FRIZQT__"
+        local size     = tonumber(stGet("size")) or 12
+        local style    = stGet("style") or "OUTLINE"
+        local anchor   = stGet("anchor") or "BOTTOMRIGHT"
+        local offsetX  = tonumber(stGet("offsetX")) or 0
+        local offsetY  = tonumber(stGet("offsetY")) or 0
+        local colorMode = stGet("colorMode") or "default"
+
+        local fontPath = addon.ResolveFontFace and addon.ResolveFontFace(fontFace)
+        if fontPath then
+            if addon.ApplyFontStyle then
+                -- Routes through Scoot's font-style helper so SHADOW / HEAVY /
+                -- STROKE prefixes render correctly, matching other Scoot text.
+                pcall(addon.ApplyFontStyle, iconFrame.CountText, fontPath, size, style)
+            else
+                pcall(iconFrame.CountText.SetFont, iconFrame.CountText, fontPath, size, style)
+            end
+        end
+
+        if colorMode == "custom" then
+            local c = stGet("customColor") or { 1, 1, 1, 1 }
+            pcall(iconFrame.CountText.SetTextColor, iconFrame.CountText,
+                c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        else
+            pcall(iconFrame.CountText.SetTextColor, iconFrame.CountText, 1, 1, 1, 1)
+        end
+
+        iconFrame.CountText:ClearAllPoints()
+        iconFrame.CountText:SetPoint(anchor, iconFrame, anchor, offsetX, offsetY)
+
         iconFrame.CountText:Show()
     else
         iconFrame.CountText:Hide()
@@ -439,8 +503,10 @@ end
 -- Icon Positioning
 --------------------------------------------------------------------------------
 
--- Center-anchor compensation: shift icon CENTER inward (inside) or outward (outside)
--- so the icon sits fully within/outside the frame regardless of scale.
+-- Center-anchor compensation: shift icon CENTER inward so it sits fully within
+-- the frame regardless of scale. Only the first icon in an anchor group uses
+-- its anchor's full compensation; subsequent icons offset along the group's
+-- direction axis.
 local INSIDE_CENTER_OFFSET = {
     TOPLEFT     = {  1, -1 },  -- push right and down
     TOP         = {  0, -1 },  -- push down
@@ -452,46 +518,125 @@ local INSIDE_CENTER_OFFSET = {
     BOTTOM      = {  0,  1 },  -- push up
     BOTTOMRIGHT = { -1,  1 },  -- push left and up
 }
+table.freeze(INSIDE_CENTER_OFFSET)
 
-local OUTSIDE_CENTER_OFFSET = {
-    TOPLEFT     = { -1,  1 },  -- push left and up
-    TOP         = {  0,  1 },  -- push up
-    TOPRIGHT    = {  1,  1 },  -- push right and up
-    RIGHT       = {  1,  0 },  -- push right
-    BOTTOMRIGHT = {  1, -1 },  -- push right and down
-    BOTTOM      = {  0, -1 },  -- push down
-    BOTTOMLEFT  = { -1, -1 },  -- push left and down
-    LEFT        = { -1,  0 },  -- push left
-}
+local function GetGroupSpacing(anchor)
+    local db = addon.db and addon.db.profile
+    local at = db and db.groupFrames and db.groupFrames.auraTracking
+    local map = at and at.positionGroupSpacing
+    if type(map) == "table" and type(map[anchor]) == "number" then
+        return map[anchor]
+    end
+    return 2
+end
 
-function HA.PositionIcon(iconFrame, config, groupFrame)
-    if not iconFrame or not groupFrame then return end
-
+-- Place a single icon at a given horizontal + vertical offset from its anchor.
+-- offsetX/offsetY are relative to the anchor point, measured along the group's
+-- direction (the direction multipliers are baked in at the call site). The
+-- INSIDE_CENTER_OFFSET compensation keeps the icon tucked inside the frame at
+-- its anchor corner; vertical row growth is added on top.
+local function PlaceIcon(iconFrame, groupFrame, anchor, offsetX, offsetY)
+    offsetY = offsetY or 0
     iconFrame:ClearAllPoints()
-
-    local position = config.position or "inside"
-    local anchor = config.anchor or "TOPRIGHT"
-    local offsetX = config.offsetX or 0
-    local offsetY = config.offsetY or 0
-
     local halfW = iconFrame:GetWidth() * 0.5
     local halfH = iconFrame:GetHeight() * 0.5
+    local comp = INSIDE_CENTER_OFFSET[anchor] or INSIDE_CENTER_OFFSET.TOPRIGHT
+    iconFrame:SetPoint(
+        "CENTER", groupFrame, anchor,
+        offsetX + comp[1] * halfW,
+        offsetY + comp[2] * halfH
+    )
+end
 
-    if position == "outside" then
-        local anchorInfo = OUTSIDE_ANCHOR_MAP[anchor]
-        if anchorInfo then
-            local comp = OUTSIDE_CENTER_OFFSET[anchor] or { 0, 0 }
-            iconFrame:SetPoint("CENTER", groupFrame, anchorInfo.relPoint,
-                offsetX + comp[1] * halfW, offsetY + comp[2] * halfH)
-        else
-            iconFrame:SetPoint("CENTER", groupFrame, "RIGHT", offsetX + halfW, offsetY)
+-- Reflow all active icons on a frame: group by anchor, sort by rank, offset
+-- each icon from the previous by (prev_w/2 + curr_w/2 + positionGroupSpacing)
+-- along the anchor's direction.
+function HA.ReflowIconsForFrame(groupFrame)
+    if not groupFrame then return end
+    local state = HA._getState and HA._getState(groupFrame)
+    if not state or not state.iconFrames then return end
+
+    -- Bucket active icons by anchor key
+    local groups = {}
+    for spellId, iconFrame in pairs(state.iconFrames) do
+        local cfg = HA._GetSpellConfig and HA._GetSpellConfig(spellId)
+        if cfg then
+            local anchor = cfg.anchor or "BOTTOMRIGHT"
+            if not HA.INSIDE_ANCHOR_VALUES[anchor] then anchor = "BOTTOMRIGHT" end
+            local rank = tonumber(cfg.rank) or 1
+            groups[anchor] = groups[anchor] or {}
+            table.insert(groups[anchor], {
+                iconFrame = iconFrame,
+                rank      = rank,
+                spellId   = spellId,
+                config    = cfg,
+            })
         end
-    else
-        -- Inside: anchor icon center, compensated inward so icon stays within bounds
-        local comp = INSIDE_CENTER_OFFSET[anchor] or { 0, 0 }
-        iconFrame:SetPoint("CENTER", groupFrame, anchor,
-            offsetX + comp[1] * halfW, offsetY + comp[2] * halfH)
     end
+
+    -- Sort each group by (rank asc, spellId asc) and lay out in a grid that
+    -- wraps to a new row every COLS_PER_ROW icons. Direction per anchor:
+    --   X  →  ANCHOR_DIRECTION  (±1 per step)
+    --   Y  →  ROW_GROWTH_DIR    (±1 per row)
+    for anchor, members in pairs(groups) do
+        table.sort(members, function(a, b)
+            if a.rank ~= b.rank then return a.rank < b.rank end
+            return (a.spellId or 0) < (b.spellId or 0)
+        end)
+
+        local spacing = GetGroupSpacing(anchor)
+        local xDir = ANCHOR_DIRECTION[anchor] or 1
+        local yDir = ROW_GROWTH_DIR[anchor] or -1
+
+        -- Row-step height uses the first icon's height as the canonical row
+        -- step for this anchor. Mixed iconScale groups all step by the same
+        -- amount, which keeps rows visually aligned.
+        local rowStep = 0
+        if members[1] then
+            rowStep = members[1].iconFrame:GetHeight() + spacing
+        end
+
+        local rowCursor = 0  -- running horizontal offset magnitude within the current row
+        local prevHalfW = 0
+        local lastRow = -1
+
+        for idx, entry in ipairs(members) do
+            local iconFrame = entry.iconFrame
+            local halfW = iconFrame:GetWidth() * 0.5
+            local col = (idx - 1) % COLS_PER_ROW
+            local row = math.floor((idx - 1) / COLS_PER_ROW)
+
+            if row ~= lastRow then
+                -- First icon in this row: reset horizontal cursor.
+                rowCursor = 0
+                prevHalfW = halfW
+                lastRow = row
+            else
+                rowCursor = rowCursor + prevHalfW + halfW + spacing
+                prevHalfW = halfW
+            end
+
+            local offsetX = rowCursor * xDir
+            local offsetY = row * rowStep * yDir
+
+            -- Per-icon fine-tune on top of auto-placement. Raw pixels, not
+            -- multiplied by xDir/yDir — +X always means right, +Y always up.
+            local cfg = entry.config
+            offsetX = offsetX + (tonumber(cfg and cfg.offsetX) or 0)
+            offsetY = offsetY + (tonumber(cfg and cfg.offsetY) or 0)
+
+            PlaceIcon(iconFrame, groupFrame, anchor, offsetX, offsetY)
+        end
+    end
+end
+
+-- Back-compat API: per-icon positioning was the old single-pass model. The new
+-- rank-grouped model requires whole-frame reflow, so this wraps ReflowIcons.
+-- Callers that invoke this per-icon still work, but at O(N*M) total (caller
+-- iterates N icons, each call reflows all M siblings). For hot paths prefer
+-- calling HA.ReflowIconsForFrame once after all sizing updates are done.
+function HA.PositionIcon(iconFrame, config, groupFrame)
+    HA.ReflowIconsForFrame(groupFrame)
 end
 
 --------------------------------------------------------------------------------

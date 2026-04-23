@@ -33,7 +33,7 @@ HA.SPELL_REGISTRY = {
         { id = 373267, name = "Lifebind",             textureId = 5765864 },
         { id = 376788, name = "Echo (Dream Breath)",  textureId = 5765863 },
         -- Augmentation
-        { id = 360827, name = "Blistering Scales",    textureId = 5199623 },
+        { id = 360827, name = "Blistering Scales",    textureId = 5199623, stackable = true },
         { id = 395152, name = "Ebon Might",           textureId = 5199630 },
         { id = 410089, name = "Prescience",           textureId = 5199640 },
         { id = 410263, name = "Inferno's Blessing",   textureId = 5199634 },
@@ -43,7 +43,7 @@ HA.SPELL_REGISTRY = {
     DRUID = {
         { id = 774,    name = "Rejuvenation",   textureId = 136081 },
         { id = 8936,   name = "Regrowth",        textureId = 136085 },
-        { id = 33763,  name = "Lifebloom",        textureId = 134206 },
+        { id = 33763,  name = "Lifebloom",        textureId = 134206, stackable = true },
         { id = 48438,  name = "Wild Growth",      textureId = 236153 },
         { id = 155777, name = "Germination",      textureId = 136081 },
     },
@@ -54,18 +54,18 @@ HA.SPELL_REGISTRY = {
         { id = 1253593, name = "Void Shield",            textureId = 135940 },
         -- Holy
         { id = 139,     name = "Renew",                  textureId = 135953 },
-        { id = 41635,   name = "Prayer of Mending",      textureId = 135944 },
+        { id = 41635,   name = "Prayer of Mending",      textureId = 135944, stackable = true },
         { id = 77489,   name = "Echo of Light",           textureId = 237541 },
     },
     MONK = {
         { id = 115175, name = "Soothing Mist",    textureId = 606550 },
         { id = 119611, name = "Renewing Mist",    textureId = 627487 },
         { id = 124682, name = "Enveloping Mist",  textureId = 775461 },
-        { id = 450769, name = "Aspect of Harmony", textureId = 5765856 },
+        { id = 450769, name = "Aspect of Harmony", textureId = 5765856, stackable = true },
     },
     SHAMAN = {
-        { id = 974,    name = "Earth Shield",          textureId = 136089 },
-        { id = 383648, name = "Earth Shield (Talent)",  textureId = 136089 },
+        { id = 974,    name = "Earth Shield",          textureId = 136089, stackable = true },
+        { id = 383648, name = "Earth Shield (Talent)",  textureId = 136089, stackable = true },
         { id = 61295,  name = "Riptide",               textureId = 252995 },
     },
     PALADIN = {
@@ -101,6 +101,27 @@ for classToken, spells in pairs(HA.SPELL_REGISTRY) do
         end
     end
 end
+table.freeze(HA.SPELL_TO_CLASS)
+
+-- Reverse lookup: spellId → true when the aura is known to stack (i.e. its
+-- applications count can exceed 1). Drives conditional visibility of the
+-- "Stacks Text" settings tab per-spell. `applications` is a runtime-only
+-- observation with no static API to query, so this table is maintained as a
+-- manually-curated flag on HA.SPELL_REGISTRY entries.
+HA.STACKABLE_SPELLS = {}
+for _, spells in pairs(HA.SPELL_REGISTRY) do
+    for _, entry in ipairs(spells) do
+        if entry.stackable then
+            HA.STACKABLE_SPELLS[entry.id] = true
+            if entry.linkedIds then
+                for _, linkedId in ipairs(entry.linkedIds) do
+                    HA.STACKABLE_SPELLS[linkedId] = true
+                end
+            end
+        end
+    end
+end
+table.freeze(HA.STACKABLE_SPELLS)
 
 -- spellId → display name (includes linkedIds → parent name)
 HA.SPELL_NAMES = {}
@@ -114,6 +135,7 @@ for _, spells in pairs(HA.SPELL_REGISTRY) do
         end
     end
 end
+table.freeze(HA.SPELL_NAMES)
 
 -- linkedId → primary entry id (so linked variants share config with their parent)
 HA.LINKED_TO_PRIMARY = {}
@@ -126,6 +148,7 @@ for _, spells in pairs(HA.SPELL_REGISTRY) do
         end
     end
 end
+table.freeze(HA.LINKED_TO_PRIMARY)
 
 -- spellId → registry entry (for textureId lookup; includes linkedIds → parent entry)
 HA.SPELL_REGISTRY_BY_ID = {}
@@ -139,6 +162,7 @@ for _, spells in pairs(HA.SPELL_REGISTRY) do
         end
     end
 end
+table.freeze(HA.SPELL_REGISTRY_BY_ID)
 
 --------------------------------------------------------------------------------
 -- Per-Spell Default Settings
@@ -152,11 +176,174 @@ HA.SPELL_DEFAULTS = {
     iconCustomColor = { 1, 1, 1, 1 },
     iconScale = 100,
     showDuration = true,
-    position = "inside",
-    anchor = "TOPRIGHT",
-    offsetX = 0,
+    anchor = "BOTTOMRIGHT",     -- first-time default; auto-slot assigns rank at enable
+    offsetX = 0,                -- per-icon fine-tune, added on top of auto-placement
     offsetY = 0,
+    -- rank intentionally nil: only meaningful for enabled auras, written by AutoSlotAtEnd
+    -- stacksText intentionally nil in defaults: use HA.STACKS_TEXT_DEFAULTS via
+    --   rawget + fallback (shared subtable would get mutated across spells otherwise)
 }
+
+-- Defaults for the per-spell `stacksText` sub-table. Only used when the spell is
+-- stackable (`HA.STACKABLE_SPELLS[spellId]`). Readers must use
+-- `rawget(cfg, "stacksText")` + this fallback pattern rather than relying on
+-- metatable __index, because the nested `customColor` subtable would otherwise
+-- be shared by reference across every spell.
+HA.STACKS_TEXT_DEFAULTS = {
+    fontFace    = "FRIZQT__",
+    size        = 12,
+    style       = "OUTLINE",
+    colorMode   = "default",        -- "default" (white) | "custom"
+    customColor = { 1, 1, 1, 1 },   -- only used when colorMode == "custom"
+    anchor      = "BOTTOMRIGHT",    -- 9-way inside-icon anchor
+    offsetX     = 0,                -- px offset from the anchor
+    offsetY     = 0,
+}
+
+-- Global defaults (flat keys on auraTracking DB table). Applied on first read via
+-- the DB getters in icons.lua / buffstrip.lua so they don't require eager writes.
+HA.GLOBAL_DEFAULTS = {
+    replacementStyle = "none",          -- "none" | "solidBlack" | "numbered"
+    positionGroupSpacingDefault = 2,    -- px gap fallback when an anchor key is missing
+}
+table.freeze(HA.GLOBAL_DEFAULTS)
+
+HA.MAX_RANK = 6  -- cap aligned with Blizzard's max-buffs per CompactUnitFrame
+
+--------------------------------------------------------------------------------
+-- Rank Ordering Helpers (ordered-list model)
+--------------------------------------------------------------------------------
+-- Ranks within an anchor are always contiguous 1..N — no gaps. Operations
+-- preserve that invariant. Disabled auras may have stale rank values in DB;
+-- they're ignored because re-enable re-computes via AutoSlotAtEnd.
+--------------------------------------------------------------------------------
+
+local function GetSpellsTable()
+    local db = addon.db and addon.db.profile
+    local at = db and db.groupFrames and db.groupFrames.auraTracking
+    return at and at.spells or nil
+end
+
+-- Resolve the class (token) that owns a given spellId. Linked spell IDs
+-- inherit their parent's class via HA.SPELL_TO_CLASS.
+local function ClassOf(spellId)
+    return HA.SPELL_TO_CLASS and HA.SPELL_TO_CLASS[spellId] or nil
+end
+
+-- Returns array of { spellId, config } for enabled auras in `anchor`, sorted by
+-- their current rank (ties broken by spellId). Excludes `excludeSpellId`.
+-- When `classFilter` is a class token, only auras registered to that class are
+-- returned. Priorities are scoped to (anchor, class) so e.g. a Druid's
+-- BOTTOMRIGHT list is independent of a Shaman's BOTTOMRIGHT list, even though
+-- both live in the same DB table and share the same anchor value.
+function HA.EnabledInAnchor(anchor, excludeSpellId, classFilter)
+    local out = {}
+    local spells = GetSpellsTable()
+    if not spells then return out end
+    for spellId, cfg in pairs(spells) do
+        if spellId ~= excludeSpellId
+           and type(cfg) == "table"
+           and cfg.enabled
+           and (cfg.anchor or HA.SPELL_DEFAULTS.anchor) == anchor then
+            if (not classFilter) or ClassOf(spellId) == classFilter then
+                table.insert(out, { spellId = spellId, config = cfg })
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        local ra = tonumber(a.config.rank) or 0
+        local rb = tonumber(b.config.rank) or 0
+        if ra ~= rb then return ra < rb end
+        return a.spellId < b.spellId
+    end)
+    return out
+end
+
+function HA.CountEnabledInAnchor(anchor, excludeSpellId, classFilter)
+    return #HA.EnabledInAnchor(anchor, excludeSpellId, classFilter)
+end
+
+-- Re-index every enabled aura in (anchor, class) so ranks are exactly 1..N
+-- contiguous. Called after disable / anchor-change (old-side) to close gaps.
+-- When `classFilter` is nil, re-indexes EVERY class's list in the anchor
+-- independently (each class keeps its own 1..N sequence).
+function HA.ReindexAnchor(anchor, classFilter)
+    if classFilter then
+        local list = HA.EnabledInAnchor(anchor, nil, classFilter)
+        for i, entry in ipairs(list) do
+            entry.config.rank = i
+        end
+        return
+    end
+    -- No class filter: re-index each class bucket separately so cross-class
+    -- priorities don't clobber each other.
+    local byClass = {}
+    local all = HA.EnabledInAnchor(anchor, nil, nil)
+    for _, entry in ipairs(all) do
+        local cls = ClassOf(entry.spellId) or "__unknown__"
+        byClass[cls] = byClass[cls] or {}
+        table.insert(byClass[cls], entry)
+    end
+    for _, list in pairs(byClass) do
+        for i, entry in ipairs(list) do
+            entry.config.rank = i
+        end
+    end
+end
+
+-- Assign `spellId` to the end of its class's list in `anchor`. Writes
+-- cfg.anchor and cfg.rank. Existing anchor/rank are NOT cleaned up here —
+-- callers handle that (disable path / anchor-change path both call
+-- ReindexAnchor on the old anchor + class).
+function HA.AutoSlotAtEnd(spellId, anchor)
+    local spells = GetSpellsTable()
+    if not spells or not spells[spellId] then return end
+    local cfg = spells[spellId]
+    local cls = ClassOf(spellId)
+    local others = HA.CountEnabledInAnchor(anchor, spellId, cls)
+    local newRank = others + 1
+    if newRank > HA.MAX_RANK then newRank = HA.MAX_RANK end  -- overflow: stack on rank MAX
+    cfg.anchor = anchor
+    cfg.rank = newRank
+end
+
+-- Reorder aura `spellId` to position `newRank` within its class's list in
+-- `anchor`. Pushes other same-class auras as needed to keep ranks contiguous.
+-- Cross-class auras in the same anchor are untouched (their own 1..N list is
+-- independent).
+function HA.ReorderRank(anchor, spellId, newRank)
+    local spells = GetSpellsTable()
+    if not spells or not spells[spellId] then return end
+    local cfg = spells[spellId]
+    if not cfg.enabled then return end
+    if (cfg.anchor or HA.SPELL_DEFAULTS.anchor) ~= anchor then return end
+
+    local cls = ClassOf(spellId)
+    local list = HA.EnabledInAnchor(anchor, nil, cls)  -- INCLUDES spellId
+    local N = #list
+    if N == 0 then return end
+
+    -- Find current position
+    local curIdx
+    for i, entry in ipairs(list) do
+        if entry.spellId == spellId then curIdx = i; break end
+    end
+    if not curIdx then return end
+
+    -- Clamp target rank
+    if newRank < 1 then newRank = 1 end
+    if newRank > N then newRank = N end
+    if newRank == curIdx then return end
+
+    -- Extract and reinsert
+    local moved = table.remove(list, curIdx)
+    table.insert(list, newRank, moved)
+
+    -- Re-index the (anchor, class) list
+    for i, entry in ipairs(list) do
+        entry.config.rank = i
+    end
+end
 
 --------------------------------------------------------------------------------
 -- Active Tracked Set
@@ -366,9 +553,11 @@ local function InstallFrameToUnitHook()
                 HA.UpdateAurasForFrame(frame, unit)
             else
                 HA.HideAllAurasForFrame(frame)
+                if HA.ReleaseOverlaysForFrame then HA.ReleaseOverlaysForFrame(frame) end
             end
         else
             HA.HideAllAurasForFrame(frame)
+            if HA.ReleaseOverlaysForFrame then HA.ReleaseOverlaysForFrame(frame) end
         end
     end)
 
@@ -468,6 +657,21 @@ function HA.UpdateAurasForFrame(frame, unit)
             HA.StyleIcon(iconFrame, spellId, auraData, frame, unit)
         end
     end
+
+    -- Single-pass layout for the whole frame: groups icons by anchor, sorts by
+    -- rank, offsets cumulatively. Individual StyleIcon calls above also trigger
+    -- reflow via HA.PositionIcon, but running once more here catches any ordering
+    -- where a later-added icon needs to push earlier siblings.
+    if HA.ReflowIconsForFrame then
+        HA.ReflowIconsForFrame(frame)
+    end
+
+    -- Refresh replacement overlays (no-op when replacementStyle = "none").
+    -- Overlay count matches CountHelpfulAuras() clamped to max-buffs, so slot 1
+    -- always reflects an actual Blizzard-rendered buff.
+    if HA.RefreshOverlaysForFrame then
+        HA.RefreshOverlaysForFrame(frame, unit)
+    end
 end
 
 function HA.HideAllAurasForFrame(frame)
@@ -480,6 +684,10 @@ function HA.HideAllAurasForFrame(frame)
         end
     end
     wipe(state.iconFrames)
+    -- Overlays are managed separately by RefreshOverlaysForFrame (which handles
+    -- visibility + style="none"). Only release them here when the frame itself
+    -- becomes invisible — RefreshOverlaysForFrame handles that case on its own,
+    -- so we don't touch them in the general-hide path.
 end
 
 local function DiscoverGroupFrames()
@@ -532,8 +740,14 @@ function HA.RefreshAllAuraDisplays()
     for frame, state in pairs(AuraTrackingState) do
         if state.unit and GROUP_UNITS[state.unit] then
             HA.UpdateAurasForFrame(frame, state.unit)
+            if HA.RefreshOverlaysForFrame then
+                HA.RefreshOverlaysForFrame(frame, state.unit)
+            end
         else
             HA.HideAllAurasForFrame(frame)
+            if HA.ReleaseOverlaysForFrame then
+                HA.ReleaseOverlaysForFrame(frame)
+            end
         end
     end
 end
@@ -596,22 +810,26 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "UNIT_AURA" then
         local unit = ...
         if not GROUP_UNITS[unit] then return end
-        if not next(HA.ACTIVE_TRACKED_IDS) then return end
 
-        -- Find the frame for this unit and update custom icons
+        local hasTracked = next(HA.ACTIVE_TRACKED_IDS) ~= nil
+
+        -- Find the frame for this unit. Always refresh overlays (independent of
+        -- tracked-spell set); only run the custom-icon pipeline when there ARE
+        -- tracked spells enabled.
         local found = false
         for frame, state in pairs(AuraTrackingState) do
             if state.unit == unit then
-                HA.UpdateAurasForFrame(frame, unit)
+                if hasTracked then HA.UpdateAurasForFrame(frame, unit) end
+                if HA.RefreshOverlaysForFrame then HA.RefreshOverlaysForFrame(frame, unit) end
                 found = true
             end
         end
-        -- Fallback: discover frames if no match (handles late-spawning companions, etc.)
         if not found then
             DiscoverGroupFrames()
             for frame, state in pairs(AuraTrackingState) do
                 if state.unit == unit then
-                    HA.UpdateAurasForFrame(frame, unit)
+                    if hasTracked then HA.UpdateAurasForFrame(frame, unit) end
+                    if HA.RefreshOverlaysForFrame then HA.RefreshOverlaysForFrame(frame, unit) end
                 end
             end
         end

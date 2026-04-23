@@ -1033,6 +1033,16 @@ function Builder:AddTabbedSection(options)
                     -- Set this tab's content height
                     section:SetTabContentHeight(tabKey, contentHeight)
 
+                    -- Also give the tab content frame itself an explicit height matching
+                    -- its children. When the tabbed section is used at the top level of
+                    -- a scroll page (not nested inside a collapsible), leaving tabContent
+                    -- with no SetHeight causes the children not to render — observed on
+                    -- group frame Aura Tracking per-spell tabs. Collapsible content frames
+                    -- get explicit SetHeight internally, which is why nested cases work.
+                    if contentFrame.SetHeight then
+                        contentFrame:SetHeight(contentHeight)
+                    end
+
                     -- Store inner builder on content frame for cleanup
                     contentFrame._innerBuilder = innerBuilder
                 end
