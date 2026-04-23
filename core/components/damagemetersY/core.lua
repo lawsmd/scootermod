@@ -1,45 +1,45 @@
--- damagemetersv2/core.lua - V2 damage meter namespace, component registration, DB structure
+-- damagemetersY/core.lua - Damage Meters Y namespace, component registration, DB structure
 local addonName, addon = ...
 
 --------------------------------------------------------------------------------
--- Damage Meter V2 — Namespace, Component Registration, DB Structure
+-- Damage Meters Y — Namespace, Component Registration, DB Structure
 --------------------------------------------------------------------------------
 
-addon.DamageMetersV2 = {}
-local DM2 = addon.DamageMetersV2
+addon.DamageMetersY = {}
+local DMY = addon.DamageMetersY
 
-DM2.MAX_WINDOWS = 5
-DM2.MAX_COLUMNS = 5
-DM2.MAX_POOL = 25
+DMY.MAX_WINDOWS = 5
+DMY.MAX_COLUMNS = 5
+DMY.MAX_POOL = 25
 
 -- Runtime state (not persisted)
-DM2._windows = {}       -- [1..5] = { frame, barRows, localPlayerRow, ... }
-DM2._comp = nil          -- Component reference (set during registration)
-DM2._initialized = false
-DM2._inCombat = false
-DM2._combatStartTime = 0
-DM2._preCombatDuration = 0 -- duration before current combat started
+DMY._windows = {}       -- [1..5] = { frame, barRows, localPlayerRow, ... }
+DMY._comp = nil          -- Component reference (set during registration)
+DMY._initialized = false
+DMY._inCombat = false
+DMY._combatStartTime = 0
+DMY._preCombatDuration = 0 -- duration before current combat started
 
 -- Debug trace buffer
-DM2._traceLog = {}
-DM2._traceEnabled = false -- enable with /scoot debug dmv2 trace on
+DMY._traceLog = {}
+DMY._traceEnabled = false -- enable with /scoot debug dmY trace on
 
-function DM2._Trace(msg)
-    if not DM2._traceEnabled then return end
+function DMY._Trace(msg)
+    if not DMY._traceEnabled then return end
     local ts = string.format("%.1f", GetTime() % 1000)
-    table.insert(DM2._traceLog, ts .. " " .. msg)
+    table.insert(DMY._traceLog, ts .. " " .. msg)
     -- Cap at 200 entries
-    if #DM2._traceLog > 200 then
-        table.remove(DM2._traceLog, 1)
+    if #DMY._traceLog > 200 then
+        table.remove(DMY._traceLog, 1)
     end
 end
 
-function addon.DebugDMV2Trace()
-    if #DM2._traceLog == 0 then
-        addon.DebugShowWindow("DMV2 Trace", "No trace entries. Fight something first.")
+function addon.DebugDMYTrace()
+    if #DMY._traceLog == 0 then
+        addon.DebugShowWindow("DMY Trace", "No trace entries. Fight something first.")
         return
     end
-    addon.DebugShowWindow("DMV2 Trace", table.concat(DM2._traceLog, "\n"))
+    addon.DebugShowWindow("DMY Trace", table.concat(DMY._traceLog, "\n"))
 end
 
 --------------------------------------------------------------------------------
@@ -53,15 +53,16 @@ local WINDOW_DEFAULTS = {
     [4] = { enabled = false, sessionType = 1, columns = { { format = "dps" } }, frameWidth = 350, frameHeight = 250, windowScale = 1.0 },
     [5] = { enabled = false, sessionType = 1, columns = { { format = "dps" } }, frameWidth = 350, frameHeight = 250, windowScale = 1.0 },
 }
+table.freeze(WINDOW_DEFAULTS)
 
-function DM2._EnsureWindowsDB()
+function DMY._EnsureWindowsDB()
     local profile = addon.db and addon.db.profile
     if not profile then return nil end
     if not profile.damageMeterV2Windows then
         profile.damageMeterV2Windows = {}
     end
     local wins = profile.damageMeterV2Windows
-    for i = 1, DM2.MAX_WINDOWS do
+    for i = 1, DMY.MAX_WINDOWS do
         if not wins[i] then
             local def = WINDOW_DEFAULTS[i]
             wins[i] = {
@@ -84,18 +85,18 @@ function DM2._EnsureWindowsDB()
     return wins
 end
 
-function DM2._GetWindowConfig(windowIndex)
-    local wins = DM2._EnsureWindowsDB()
+function DMY._GetWindowConfig(windowIndex)
+    local wins = DMY._EnsureWindowsDB()
     return wins and wins[windowIndex]
 end
 
 --- Migrate excluded formats (DPS/HPS/combos) in secondary columns to totalAmount equivalents.
-function DM2._MigrateSecondaryColumns()
-    local migMap = DM2.SECONDARY_MIGRATION_MAP
+function DMY._MigrateSecondaryColumns()
+    local migMap = DMY.SECONDARY_MIGRATION_MAP
     if not migMap then return end
-    local wins = DM2._EnsureWindowsDB()
+    local wins = DMY._EnsureWindowsDB()
     if not wins then return end
-    for i = 1, DM2.MAX_WINDOWS do
+    for i = 1, DMY.MAX_WINDOWS do
         local cfg = wins[i]
         if cfg and cfg.columns then
             for c = 2, #cfg.columns do
@@ -113,10 +114,10 @@ end
 --------------------------------------------------------------------------------
 
 addon:RegisterComponentInitializer(function(self)
-    -- Gate: only register if V2 sub-toggle is enabled
+    -- Gate: only register if Y sub-toggle is enabled (DB key: "damageMeterV2")
     if not self:IsModuleEnabled("damageMeter", "damageMeterV2") then return end
 
-    -- When V2 is active, ensure V1 sub-toggle is disabled.
+    -- When Y is active, ensure X sub-toggle is disabled.
     -- Handles the case where moduleEnabled.damageMeter is still a boolean
     -- (existing profiles before sub-toggles were added).
     if self.SetModuleEnabled then
@@ -137,7 +138,7 @@ addon:RegisterComponentInitializer(function(self)
 
     local comp = Component:New({
         id = "damageMeterV2",
-        name = "Damage Meter V2",
+        name = "Damage Meters Y",
         settings = {
             -- Layout
             windowScale     = { type = "addon", default = 1.0 },
@@ -230,18 +231,26 @@ addon:RegisterComponentInitializer(function(self)
         },
 
         ApplyStyling = function(self)
-            DM2._ApplyStyling(self)
+            DMY._ApplyStyling(self)
         end,
 
         RefreshOpacity = function(self)
-            DM2._RefreshOpacity(self)
+            DMY._RefreshOpacity(self)
         end,
     })
 
     self:RegisterComponent(comp)
-    DM2._comp = comp
+    DMY._comp = comp
 
-    -- Bootstrap V2 on first PLAYER_ENTERING_WORLD.
+    -- Start the background inspect ticker that populates ilvl/spec caches for
+    -- export. The ticker lives on the X namespace but its init is idempotent,
+    -- and X is disabled whenever Y is active, so Y owns the call here.
+    local DMX = addon.DamageMetersX
+    if DMX and DMX._InitInspectCache then
+        DMX._InitInspectCache()
+    end
+
+    -- Bootstrap Y on first PLAYER_ENTERING_WORLD.
     -- The component system's ApplyStyling gate may skip us (proxy/zero-touch),
     -- so it self-bootstraps after DB linking is complete.
     local bootstrapFrame = CreateFrame("Frame")
@@ -249,7 +258,7 @@ addon:RegisterComponentInitializer(function(self)
     bootstrapFrame:SetScript("OnEvent", function(f)
         f:UnregisterAllEvents()
         if comp.db then
-            DM2._ApplyStyling(comp)
+            DMY._ApplyStyling(comp)
         end
     end)
 end, "damageMeter")
@@ -258,12 +267,12 @@ end, "damageMeter")
 -- ApplyStyling / RefreshOpacity
 --------------------------------------------------------------------------------
 
-function DM2._ApplyStyling(comp)
-    -- Guard: bail if V2 is not enabled on the current profile (handles profile switches)
+function DMY._ApplyStyling(comp)
+    -- Guard: bail if Y is not enabled on the current profile (handles profile switches)
     if not addon:IsModuleEnabled("damageMeter", "damageMeterV2") then
-        if DM2._initialized then
-            for i = 1, DM2.MAX_WINDOWS do
-                local win = DM2._windows[i]
+        if DMY._initialized then
+            for i = 1, DMY.MAX_WINDOWS do
+                local win = DMY._windows[i]
                 if win and win.frame then
                     win.frame:Hide()
                 end
@@ -273,36 +282,36 @@ function DM2._ApplyStyling(comp)
     end
 
     -- Initialize frames on first styling pass
-    if not DM2._initialized then
-        DM2._Initialize(comp)
+    if not DMY._initialized then
+        DMY._Initialize(comp)
     end
 
-    -- Disable Blizzard meter via CVar when V2 is active
+    -- Disable Blizzard meter via CVar when Y is active
     if C_CVar and C_CVar.SetCVar and not InCombatLockdown() then
         pcall(C_CVar.SetCVar, "damageMeterEnabled", "0")
     end
 
     -- Show/hide and style each window
-    for i = 1, DM2.MAX_WINDOWS do
-        DM2._UpdateVisibility(i, comp)
-        local win = DM2._windows[i]
+    for i = 1, DMY.MAX_WINDOWS do
+        DMY._UpdateVisibility(i, comp)
+        local win = DMY._windows[i]
         if win and win.frame:IsShown() then
-            DM2._ApplyFullStyling(i, comp)
-            DM2._UpdateSessionHeader(i, comp)
+            DMY._ApplyFullStyling(i, comp)
+            DMY._UpdateSessionHeader(i, comp)
         end
     end
 
     -- Trigger a full data refresh
-    if not DM2._inCombat then
-        DM2._FullRefreshAllWindows()
+    if not DMY._inCombat then
+        DMY._FullRefreshAllWindows()
     end
 
     -- Refresh opacity
-    DM2._RefreshOpacity(comp)
+    DMY._RefreshOpacity(comp)
 end
 
-function DM2._RefreshOpacity(comp)
-    if not DM2._initialized then return end
+function DMY._RefreshOpacity(comp)
+    if not DMY._initialized then return end
     local db = comp.db
     local inCombat = InCombatLockdown()
     local alpha
@@ -311,16 +320,16 @@ function DM2._RefreshOpacity(comp)
     else
         alpha = math.max(0, math.min(1.0, (tonumber(db.opacityOutOfCombat) or 100) / 100))
     end
-    for i = 1, DM2.MAX_WINDOWS do
-        local win = DM2._windows[i]
+    for i = 1, DMY.MAX_WINDOWS do
+        local win = DMY._windows[i]
         if win and win.frame:IsShown() then
             win.frame:SetAlpha(alpha)
         end
     end
 
     -- Update visibility for combat-based modes
-    for i = 1, DM2.MAX_WINDOWS do
-        DM2._UpdateVisibility(i, comp)
+    for i = 1, DMY.MAX_WINDOWS do
+        DMY._UpdateVisibility(i, comp)
     end
 end
 
@@ -328,25 +337,25 @@ end
 -- Initialization
 --------------------------------------------------------------------------------
 
-function DM2._Initialize(comp)
-    if DM2._initialized then return end
-    DM2._initialized = true
+function DMY._Initialize(comp)
+    if DMY._initialized then return end
+    DMY._initialized = true
 
-    DM2._EnsureWindowsDB()
+    DMY._EnsureWindowsDB()
 
     -- Migrate excluded formats in secondary columns to totalAmount equivalents
-    DM2._MigrateSecondaryColumns()
+    DMY._MigrateSecondaryColumns()
 
     -- Create all window frames
-    for i = 1, DM2.MAX_WINDOWS do
-        DM2._CreateWindow(i, comp)
+    for i = 1, DMY.MAX_WINDOWS do
+        DMY._CreateWindow(i, comp)
     end
 
     -- Initialize event handling
-    DM2._InitializeEvents(comp)
+    DMY._InitializeEvents(comp)
 
     -- Initialize Edit Mode positioning
-    DM2._InitializeEditMode()
+    DMY._InitializeEditMode()
 end
 
 --------------------------------------------------------------------------------
@@ -357,8 +366,9 @@ local SESSION_LABELS = {
     [0] = "Overall",
     [1] = "Current",
 }
+table.freeze(SESSION_LABELS)
 
-function DM2._GetSessionLabel(sessionType, sessionID, sessionName)
+function DMY._GetSessionLabel(sessionType, sessionID, sessionName)
     if sessionID then
         return sessionName or ("Combat #" .. sessionID)
     end
@@ -369,13 +379,13 @@ end
 -- Copy Window Settings
 --------------------------------------------------------------------------------
 
-function DM2.CopyWindowSettings(sourceIdx, destIdx)
+function DMY.CopyWindowSettings(sourceIdx, destIdx)
     if type(sourceIdx) ~= "number" or type(destIdx) ~= "number" then return end
     if sourceIdx == destIdx then return end
-    if sourceIdx < 1 or sourceIdx > DM2.MAX_WINDOWS then return end
-    if destIdx < 1 or destIdx > DM2.MAX_WINDOWS then return end
+    if sourceIdx < 1 or sourceIdx > DMY.MAX_WINDOWS then return end
+    if destIdx < 1 or destIdx > DMY.MAX_WINDOWS then return end
 
-    local wins = DM2._EnsureWindowsDB()
+    local wins = DMY._EnsureWindowsDB()
     if not wins then return end
     local src, dst = wins[sourceIdx], wins[destIdx]
     if not src or not dst then return end
@@ -392,5 +402,5 @@ function DM2.CopyWindowSettings(sourceIdx, destIdx)
     dst.frameHeight = src.frameHeight
     dst.windowScale = src.windowScale
 
-    if DM2._comp then DM2._ApplyStyling(DM2._comp) end
+    if DMY._comp then DMY._ApplyStyling(DMY._comp) end
 end

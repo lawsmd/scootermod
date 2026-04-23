@@ -1,6 +1,6 @@
--- damagemetersv2/events.lua - Event registration, timer ticker, combat state sync
+-- damagemetersY/events.lua - Event registration, timer ticker, combat state sync
 local _, addon = ...
-local DM2 = addon.DamageMetersV2
+local DMY = addon.DamageMetersY
 
 --------------------------------------------------------------------------------
 -- Event System
@@ -11,7 +11,7 @@ local updatePending = false
 local resetPending = false
 
 local function OnEvent(self, event, ...)
-    if not DM2._initialized then return end
+    if not DMY._initialized then return end
 
     if event == "DAMAGE_METER_RESET" then
         resetPending = true
@@ -19,21 +19,21 @@ local function OnEvent(self, event, ...)
 
     -- Combat ended: immediate synchronous full refresh
     if event == "PLAYER_REGEN_ENABLED" then
-        DM2._Trace("REGEN_ENABLED -> ExitCombatMode + FullRefresh")
-        DM2._ExitCombatMode()
-        DM2._FullRefreshAllWindows()
-        if DM2._comp then
-            DM2._RefreshOpacity(DM2._comp)
+        DMY._Trace("REGEN_ENABLED -> ExitCombatMode + FullRefresh")
+        DMY._ExitCombatMode()
+        DMY._FullRefreshAllWindows()
+        if DMY._comp then
+            DMY._RefreshOpacity(DMY._comp)
         end
         return
     end
 
     -- Combat started: transition to combat mode
     if event == "PLAYER_REGEN_DISABLED" then
-        DM2._Trace("REGEN_DISABLED -> EnterCombatMode")
-        DM2._EnterCombatMode()
-        if DM2._comp then
-            DM2._RefreshOpacity(DM2._comp)
+        DMY._Trace("REGEN_DISABLED -> EnterCombatMode")
+        DMY._EnterCombatMode()
+        if DMY._comp then
+            DMY._RefreshOpacity(DMY._comp)
         end
         return
     end
@@ -43,15 +43,15 @@ local function OnEvent(self, event, ...)
         local isInitialLogin, isReloadingUi = ...
         -- Defer styling re-apply (existing behavior)
         C_Timer.After(1.0, function()
-            if DM2._comp then
-                DM2._ApplyStyling(DM2._comp)
+            if DMY._comp then
+                DMY._ApplyStyling(DMY._comp)
             end
         end)
 
         -- Auto-reset on instance entry
         if isInitialLogin or isReloadingUi then return end
 
-        local comp = DM2._comp
+        local comp = DMY._comp
         if not comp or not comp.db then return end
 
         local mode = comp.db.autoResetData
@@ -80,16 +80,16 @@ local function OnEvent(self, event, ...)
     -- Throttled update for damage meter data events
     if not updatePending then
         updatePending = true
-        DM2._Trace("THROTTLE event=" .. event .. " inCombat=" .. tostring(DM2._inCombat))
-        local throttle = DM2._comp and DM2._comp.db and DM2._comp.db.updateThrottle or 1.0
+        DMY._Trace("THROTTLE event=" .. event .. " inCombat=" .. tostring(DMY._inCombat))
+        local throttle = DMY._comp and DMY._comp.db and DMY._comp.db.updateThrottle or 1.0
         C_Timer.After(throttle, function()
             updatePending = false
             if resetPending then
                 resetPending = false
-                DM2._HandleReset()
+                DMY._HandleReset()
             end
-            DM2._Trace("TIMER_FIRED calling _UpdateAllWindows")
-            DM2._UpdateAllWindows()
+            DMY._Trace("TIMER_FIRED calling _UpdateAllWindows")
+            DMY._UpdateAllWindows()
         end)
     end
 end
@@ -105,13 +105,13 @@ local function OnTimerUpdate(self, elapsed)
     if self._elapsed < 1.0 then return end
     self._elapsed = 0
 
-    if not DM2._initialized then return end
+    if not DMY._initialized then return end
 
-    for i = 1, DM2.MAX_WINDOWS do
-        local win = DM2._windows[i]
-        local cfg = DM2._GetWindowConfig(i)
+    for i = 1, DMY.MAX_WINDOWS do
+        local win = DMY._windows[i]
+        local cfg = DMY._GetWindowConfig(i)
         if win and cfg and cfg.enabled and win.frame:IsShown() then
-            DM2._UpdateTimerText(i)
+            DMY._UpdateTimerText(i)
         end
     end
 end
@@ -120,7 +120,7 @@ end
 -- Initialization (called from core.lua _Initialize)
 --------------------------------------------------------------------------------
 
-function DM2._InitializeEvents(comp)
+function DMY._InitializeEvents(comp)
     -- Event frame
     eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("DAMAGE_METER_COMBAT_SESSION_UPDATED")
@@ -138,7 +138,7 @@ function DM2._InitializeEvents(comp)
 
     -- If already in combat when this loads, sync state
     if InCombatLockdown() then
-        DM2._inCombat = true
-        DM2._combatStartTime = GetTime()
+        DMY._inCombat = true
+        DMY._combatStartTime = GetTime()
     end
 end

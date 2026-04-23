@@ -1,14 +1,14 @@
 local addonName, addon = ...
 
--- damagemeters/overlays.lua — Entry overlay frame creation, Blizzard content
+-- damagemetersX/overlays.lua — Entry overlay frame creation, Blizzard content
 -- hiding/restoring, all overlay-level styling and data updates.
 
-local DM = addon.DamageMeters
+local DMX = addon.DamageMetersX
 
 -- Local aliases for frequently used namespace functions
-local SafeSetAlpha = DM._SafeSetAlpha
-local GetClassColor = DM._GetClassColor
-local GetJiberishIcons = DM._GetJiberishIcons
+local SafeSetAlpha = DMX._SafeSetAlpha
+local GetClassColor = DMX._GetClassColor
+local GetJiberishIcons = DMX._GetJiberishIcons
 
 --------------------------------------------------------------------------------
 -- Constants
@@ -728,9 +728,9 @@ end
 -- Namespace Promotion
 --------------------------------------------------------------------------------
 
-DM._CreateClipFrame = CreateClipFrame
-DM._CreateEntryOverlay = CreateEntryOverlay
-DM._HideBlizzardEntryContent = HideBlizzardEntryContent
-DM._RestoreBlizzardEntryContent = RestoreBlizzardEntryContent
-DM._UpdateEntryOverlayData = UpdateEntryOverlayData
-DM._PopulateEntryOverlay = PopulateEntryOverlay
+DMX._CreateClipFrame = CreateClipFrame
+DMX._CreateEntryOverlay = CreateEntryOverlay
+DMX._HideBlizzardEntryContent = HideBlizzardEntryContent
+DMX._RestoreBlizzardEntryContent = RestoreBlizzardEntryContent
+DMX._UpdateEntryOverlayData = UpdateEntryOverlayData
+DMX._PopulateEntryOverlay = PopulateEntryOverlay

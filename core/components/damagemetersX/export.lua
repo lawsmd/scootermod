@@ -1,14 +1,14 @@
 local addonName, addon = ...
 
--- damagemeters/export.lua — Export data gathering, export menu UI,
+-- damagemetersX/export.lua — Export data gathering, export menu UI,
 -- chat export, export button creation/styling.
 
-local DM = addon.DamageMeters
+local DMX = addon.DamageMetersX
 
 -- Local aliases for frequently used namespace functions
-local PlayerInCombat = DM._PlayerInCombat
-local SafeSetShown = DM._SafeSetShown
-local getWindowState = DM._getWindowState
+local PlayerInCombat = DMX._PlayerInCombat
+local SafeSetShown = DMX._SafeSetShown
+local getWindowState = DMX._getWindowState
 
 --------------------------------------------------------------------------------
 -- Spec Icon → Name Resolver
@@ -443,7 +443,7 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType, sessio
     end
 
     -- Instance info
-    local instanceLabel = DM._GetCurrentZoneLabel()
+    local instanceLabel = DMX._GetCurrentZoneLabel()
 
     return {
         players = players,
@@ -453,7 +453,7 @@ function addon.GatherDamageMeterExportData(sessionType, primaryMeterType, sessio
         sessionLabel = sessionLabels[sessionType] or (sessionID and ("Segment #" .. sessionID)) or "Unknown",
         duration = duration,
         instanceLabel = instanceLabel,
-        startZoneLabel = DM._dmResetZoneSnapshot,
+        startZoneLabel = DMX._dmResetZoneSnapshot,
         playerCount = #playerOrder,
         timestamp = date("%Y-%m-%d %H:%M"),
         FormatNumber = FormatNumber,
@@ -1094,5 +1094,5 @@ end
 -- Namespace Promotion
 --------------------------------------------------------------------------------
 
-DM._ApplyExportButtonStyling = ApplyExportButtonStyling
-DM._InitInspectCache = InitInspectCache
+DMX._ApplyExportButtonStyling = ApplyExportButtonStyling
+DMX._InitInspectCache = InitInspectCache

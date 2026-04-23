@@ -1,6 +1,6 @@
--- damagemetersv2/editmode.lua - Position save/restore for Edit Mode integration
+-- damagemetersY/editmode.lua - Position save/restore for Edit Mode integration
 local _, addon = ...
-local DM2 = addon.DamageMetersV2
+local DMY = addon.DamageMetersY
 
 --------------------------------------------------------------------------------
 -- Position Save/Restore
@@ -15,7 +15,7 @@ local function EnsurePositionsDB()
     return profile.damageMeterV2Positions
 end
 
-function DM2._SavePosition(windowIndex, layoutName, point, x, y)
+function DMY._SavePosition(windowIndex, layoutName, point, x, y)
     local positions = EnsurePositionsDB()
     if not positions then return end
     if not positions[layoutName] then
@@ -28,13 +28,13 @@ function DM2._SavePosition(windowIndex, layoutName, point, x, y)
     }
 end
 
-function DM2._RestorePosition(windowIndex, layoutName)
+function DMY._RestorePosition(windowIndex, layoutName)
     local positions = EnsurePositionsDB()
     if not positions or not positions[layoutName] then return end
     local pos = positions[layoutName][windowIndex]
     if not pos then return end
 
-    local win = DM2._windows[windowIndex]
+    local win = DMY._windows[windowIndex]
     if not win or not win.frame then return end
 
     win.frame:ClearAllPoints()
@@ -45,12 +45,12 @@ end
 -- LibEditMode Registration
 --------------------------------------------------------------------------------
 
-function DM2._InitializeEditMode()
+function DMY._InitializeEditMode()
     local lib = LibStub("LibEditMode", true)
     if not lib then return end
 
-    for i = 1, DM2.MAX_WINDOWS do
-        local win = DM2._windows[i]
+    for i = 1, DMY.MAX_WINDOWS do
+        local win = DMY._windows[i]
         if win and win.frame then
             win.frame.editModeName = "Damage Meter " .. i
 
@@ -62,9 +62,9 @@ function DM2._InitializeEditMode()
                 if layoutName then
                     local savedPoint, _, _, savedX, savedY = frame:GetPoint(1)
                     if savedPoint then
-                        DM2._SavePosition(i, layoutName, savedPoint, savedX, savedY)
+                        DMY._SavePosition(i, layoutName, savedPoint, savedX, savedY)
                     else
-                        DM2._SavePosition(i, layoutName, point, x, y)
+                        DMY._SavePosition(i, layoutName, point, x, y)
                     end
                 end
             end, {
@@ -76,17 +76,17 @@ function DM2._InitializeEditMode()
     end
 
     lib:RegisterCallback("layout", function(layoutName, layoutIndex)
-        for i = 1, DM2.MAX_WINDOWS do
-            DM2._RestorePosition(i, layoutName)
+        for i = 1, DMY.MAX_WINDOWS do
+            DMY._RestorePosition(i, layoutName)
         end
     end)
 
     lib:RegisterCallback("enter", function()
-        DM2._editModeActive = true
+        DMY._editModeActive = true
         -- Show all enabled windows for positioning (even "hidden" visibility)
-        for i = 1, DM2.MAX_WINDOWS do
-            local win = DM2._windows[i]
-            local cfg = DM2._GetWindowConfig(i)
+        for i = 1, DMY.MAX_WINDOWS do
+            local win = DMY._windows[i]
+            local cfg = DMY._GetWindowConfig(i)
             if win and cfg and cfg.enabled then
                 win.frame:Show()
             end
@@ -94,11 +94,11 @@ function DM2._InitializeEditMode()
     end)
 
     lib:RegisterCallback("exit", function()
-        DM2._editModeActive = false
+        DMY._editModeActive = false
         -- Restore normal visibility rules
-        if DM2._comp then
-            for i = 1, DM2.MAX_WINDOWS do
-                DM2._UpdateVisibility(i, DM2._comp)
+        if DMY._comp then
+            for i = 1, DMY.MAX_WINDOWS do
+                DMY._UpdateVisibility(i, DMY._comp)
             end
         end
     end)

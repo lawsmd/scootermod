@@ -1,12 +1,12 @@
--- damagemetersv2/frames.lua - Window frame creation, header/bar/button construction, context menus
+-- damagemetersY/frames.lua - Window frame creation, header/bar/button construction, context menus
 local _, addon = ...
-local DM2 = addon.DamageMetersV2
+local DMY = addon.DamageMetersY
 
 --------------------------------------------------------------------------------
 -- Constants
 --------------------------------------------------------------------------------
 
-local activeDM2Menu = nil -- tracks any open DM2 flyout (gear, segment, column)
+local activeDMYMenu = nil -- tracks any open DMY flyout (gear, segment, column)
 
 local HEADER_HEIGHT = 24
 local ICON_SIZE = 22
@@ -27,7 +27,7 @@ end
 -- menu. Supports Clear/AddRow/AddDivider/ShowAtAnchor for dynamic population.
 --------------------------------------------------------------------------------
 
-function DM2._CreateFlyoutMenu(menuWidth)
+function DMY._CreateFlyoutMenu(menuWidth)
     menuWidth = menuWidth or 160
 
     -- Backdrop click-catcher
@@ -50,7 +50,7 @@ function DM2._CreateFlyoutMenu(menuWidth)
     backdrop:SetScript("OnClick", function() menu:Hide() end)
     menu:SetScript("OnHide", function()
         backdrop:Hide()
-        if activeDM2Menu == menu then activeDM2Menu = nil end
+        if activeDMYMenu == menu then activeDMYMenu = nil end
     end)
     menu:SetScript("OnShow", function() backdrop:Show() end)
 
@@ -157,8 +157,8 @@ function DM2._CreateFlyoutMenu(menuWidth)
 
     function menu:ShowAtAnchor(anchor)
         -- Dismiss any other open menu
-        if activeDM2Menu and activeDM2Menu ~= self and activeDM2Menu:IsShown() then
-            activeDM2Menu:Hide()
+        if activeDMYMenu and activeDMYMenu ~= self and activeDMYMenu:IsShown() then
+            activeDMYMenu:Hide()
         end
 
         -- Finalize height
@@ -175,7 +175,7 @@ function DM2._CreateFlyoutMenu(menuWidth)
             self:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 2)
         end
         self:Show()
-        activeDM2Menu = self
+        activeDMYMenu = self
     end
 
     return menu
@@ -199,7 +199,7 @@ local COLUMN_FORMAT_GROUPS = {
 -- positioned at their column offsets on top of the bar.
 --------------------------------------------------------------------------------
 
-function DM2._CreateBarRow(scrollContent, rowIndex)
+function DMY._CreateBarRow(scrollContent, rowIndex)
     local row = CreateFrame("Frame", nil, scrollContent)
     row:SetHeight(22)
 
@@ -266,7 +266,7 @@ function DM2._CreateBarRow(scrollContent, rowIndex)
 
     -- Column value texts (up to MAX_COLUMNS, positioned at column offsets)
     row.valueTexts = {}
-    for c = 1, DM2.MAX_COLUMNS do
+    for c = 1, DMY.MAX_COLUMNS do
         local vt = bar:CreateFontString(nil, "OVERLAY")
         vt:SetFont(GetDefaultFont(), 11, "OUTLINE")
         vt:SetJustifyH("RIGHT")
@@ -285,13 +285,13 @@ end
 -- Window Creation
 --------------------------------------------------------------------------------
 
-function DM2._CreateWindow(windowIndex, comp)
+function DMY._CreateWindow(windowIndex, comp)
     local db = comp.db
     local fw = tonumber(db.frameWidth) or 350
     local fh = tonumber(db.frameHeight) or 250
 
     -- Main container
-    local frame = CreateFrame("Frame", "ScootDMV2Window" .. windowIndex, UIParent)
+    local frame = CreateFrame("Frame", "ScootDMYWindow" .. windowIndex, UIParent)
     frame:SetSize(fw, fh)
     frame:SetPoint("CENTER", UIParent, "CENTER", -200 + (windowIndex - 1) * 100, 0)
     frame:SetFrameStrata("MEDIUM")
@@ -364,7 +364,7 @@ function DM2._CreateWindow(windowIndex, comp)
     -- Column headers (right side, created dynamically)
     local columnHeaders = {}
     local columnClickRegions = {}
-    for c = 1, DM2.MAX_COLUMNS do
+    for c = 1, DMY.MAX_COLUMNS do
         local ch = header:CreateFontString(nil, "OVERLAY")
         ch:SetFont(GetDefaultFont(), 10, "OUTLINE")
         ch:SetTextColor(0.8, 0.8, 0.8, 1)
@@ -393,27 +393,27 @@ function DM2._CreateWindow(windowIndex, comp)
     local winIdx = windowIndex -- capture for closures
 
     local function ApplySegmentChange(cfg)
-        local c = DM2._comp
+        local c = DMY._comp
         if not c then return end
-        DM2._UpdateSessionHeader(winIdx, c)
-        DM2._CalculateColumnWidths(winIdx, c)
-        DM2._LayoutBarRows(winIdx, c)
-        if DM2._inCombat then
-            DM2._UpdateWindowCombat(winIdx)
+        DMY._UpdateSessionHeader(winIdx, c)
+        DMY._CalculateColumnWidths(winIdx, c)
+        DMY._LayoutBarRows(winIdx, c)
+        if DMY._inCombat then
+            DMY._UpdateWindowCombat(winIdx)
         else
-            DM2._UpdateWindowOOC(winIdx)
+            DMY._UpdateWindowOOC(winIdx)
         end
-        DM2._UpdateTimerText(winIdx)
+        DMY._UpdateTimerText(winIdx)
     end
 
     titleClickRegion:SetScript("OnClick", function(self, button)
         if button ~= "RightButton" then return end
         if not segmentMenu then
-            segmentMenu = DM2._CreateFlyoutMenu(200)
+            segmentMenu = DMY._CreateFlyoutMenu(200)
         end
         segmentMenu:Clear()
 
-        local cfg = DM2._GetWindowConfig(winIdx)
+        local cfg = DMY._GetWindowConfig(winIdx)
         if not cfg then return end
 
         -- Overall
@@ -447,7 +447,7 @@ function DM2._CreateWindow(windowIndex, comp)
                         name = "Combat #" .. session.sessionID
                     end
                     if session.durationSeconds then
-                        name = name .. " [" .. DM2._FormatDuration(session.durationSeconds) .. "]"
+                        name = name .. " [" .. DMY._FormatDuration(session.durationSeconds) .. "]"
                     end
                     local isThis = cfg.sessionID == session.sessionID
                     local sid = session.sessionID
@@ -470,31 +470,31 @@ function DM2._CreateWindow(windowIndex, comp)
 
     local function ShowColumnMenu(clickRegion)
         local colIdx = clickRegion._colIndex
-        local cfg = DM2._GetWindowConfig(winIdx)
+        local cfg = DMY._GetWindowConfig(winIdx)
         if not cfg or not cfg.columns[colIdx] then return end
         local currentFormat = cfg.columns[colIdx].format
 
         if not columnMenu then
-            columnMenu = DM2._CreateFlyoutMenu(160)
+            columnMenu = DMY._CreateFlyoutMenu(160)
         end
         columnMenu:Clear()
 
         for gi, group in ipairs(COLUMN_FORMAT_GROUPS) do
             if gi > 1 then columnMenu:AddDivider() end
             for _, key in ipairs(group.keys) do
-                local def = DM2.COLUMN_FORMATS[key]
+                local def = DMY.COLUMN_FORMATS[key]
                 -- Exclude amountPerSecond-based formats from secondary columns
-                if def and (colIdx == 1 or not DM2.SECONDARY_EXCLUDED_FORMATS[key]) then
+                if def and (colIdx == 1 or not DMY.SECONDARY_EXCLUDED_FORMATS[key]) then
                     columnMenu:AddRow(def.headerText, { 1, 1, 1, 0.9 }, function()
                         cfg.columns[colIdx].format = key
-                        local c = DM2._comp
+                        local c = DMY._comp
                         if c then
-                            DM2._CalculateColumnWidths(winIdx, c)
-                            DM2._LayoutBarRows(winIdx, c)
-                            if DM2._inCombat then
-                                DM2._UpdateWindowCombat(winIdx)
+                            DMY._CalculateColumnWidths(winIdx, c)
+                            DMY._LayoutBarRows(winIdx, c)
+                            if DMY._inCombat then
+                                DMY._UpdateWindowCombat(winIdx)
                             else
-                                DM2._UpdateWindowOOC(winIdx)
+                                DMY._UpdateWindowOOC(winIdx)
                             end
                         end
                     end, currentFormat == key)
@@ -505,7 +505,7 @@ function DM2._CreateWindow(windowIndex, comp)
         columnMenu:ShowAtAnchor(clickRegion)
     end
 
-    for c = 1, DM2.MAX_COLUMNS do
+    for c = 1, DMY.MAX_COLUMNS do
         columnClickRegions[c]:SetScript("OnClick", function(self, button)
             if button ~= "RightButton" then return end
             ShowColumnMenu(self)
@@ -534,24 +534,24 @@ function DM2._CreateWindow(windowIndex, comp)
     -- Mouse wheel for scrolling
     scrollArea:EnableMouseWheel(true)
     scrollArea:SetScript("OnMouseWheel", function(self, delta)
-        local win = DM2._windows[windowIndex]
+        local win = DMY._windows[windowIndex]
         if not win or not win.mergedData then return end
         local bh = (tonumber(db.barHeight) or 22) + (tonumber(db.barSpacing) or 2)
         local maxVisible = math.floor(scrollArea:GetHeight() / bh)
         local totalRows = #win.mergedData.playerOrder
         local maxOffset = math.max(0, totalRows - maxVisible)
         win.scrollOffset = math.max(0, math.min(win.scrollOffset - delta, maxOffset))
-        DM2._RefreshBarRows(windowIndex, comp)
+        DMY._RefreshBarRows(windowIndex, comp)
     end)
 
     -- Create bar row pool
     local barRows = {}
-    for r = 1, DM2.MAX_POOL do
-        barRows[r] = DM2._CreateBarRow(scrollContent, r)
+    for r = 1, DMY.MAX_POOL do
+        barRows[r] = DMY._CreateBarRow(scrollContent, r)
     end
 
     -- Local player pinned row (separate frame below scroll area)
-    local pinnedRow = DM2._CreateBarRow(frame, 0)
+    local pinnedRow = DMY._CreateBarRow(frame, 0)
     pinnedRow:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
     pinnedRow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
 
@@ -566,8 +566,8 @@ function DM2._CreateWindow(windowIndex, comp)
     local gearMenu = nil
     gearBtn:SetScript("OnClick", function()
         -- Close any other window's gear menu first
-        if activeDM2Menu and activeDM2Menu ~= gearMenu and activeDM2Menu:IsShown() then
-            activeDM2Menu:Hide()
+        if activeDMYMenu and activeDMYMenu ~= gearMenu and activeDMYMenu:IsShown() then
+            activeDMYMenu:Hide()
         end
         if gearMenu and gearMenu:IsShown() then
             gearMenu:Hide()
@@ -594,7 +594,7 @@ function DM2._CreateWindow(windowIndex, comp)
 
             gearMenu:SetScript("OnHide", function()
                 backdrop:Hide()
-                activeDM2Menu = nil
+                activeDMYMenu = nil
             end)
             gearMenu:SetScript("OnShow", function()
                 backdrop:Show()
@@ -643,7 +643,7 @@ function DM2._CreateWindow(windowIndex, comp)
                 if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
                     C_DamageMeter.ResetAllCombatSessions()
                 end
-                DM2._HandleReset()
+                DMY._HandleReset()
             end)
 
             -- Divider
@@ -655,7 +655,7 @@ function DM2._CreateWindow(windowIndex, comp)
 
             -- Export to Window
             AddMenuRow("Export to Window", { 1, 1, 1, 0.9 }, function()
-                if DM2._ExportToWindow then DM2._ExportToWindow(winIdx) end
+                if DMY._ExportToWindow then DMY._ExportToWindow(winIdx) end
             end)
 
             yOff = yOff - 4
@@ -663,7 +663,7 @@ function DM2._CreateWindow(windowIndex, comp)
             -- Export to Chat section
             local chatChannels = { "SAY", "PARTY", "RAID", "INSTANCE_CHAT", "GUILD" }
             local chatLabels = { SAY = "Say", PARTY = "Party", RAID = "Raid", INSTANCE_CHAT = "Instance", GUILD = "Guild" }
-            local currentLines = (DM2._comp and DM2._comp.db and DM2._comp.db.exportChatLineCount) or 5
+            local currentLines = (DMY._comp and DMY._comp.db and DMY._comp.db.exportChatLineCount) or 5
 
             local chatHeader = gearMenu:CreateFontString(nil, "OVERLAY")
             chatHeader:SetFont(GetDefaultFont(), 9, "OUTLINE")
@@ -679,7 +679,7 @@ function DM2._CreateWindow(windowIndex, comp)
             sliderLabel:SetTextColor(0.7, 0.7, 0.7, 1)
 
             local function UpdateSliderLabel()
-                local count = (DM2._comp and DM2._comp.db and DM2._comp.db.exportChatLineCount) or 5
+                local count = (DMY._comp and DMY._comp.db and DMY._comp.db.exportChatLineCount) or 5
                 sliderLabel:SetText("Lines: " .. count)
             end
             UpdateSliderLabel()
@@ -698,8 +698,8 @@ function DM2._CreateWindow(windowIndex, comp)
             slider:SetValue(currentLines)
             slider:SetScript("OnValueChanged", function(_, value)
                 value = math.floor(value)
-                if DM2._comp and DM2._comp.db then
-                    DM2._comp.db.exportChatLineCount = value
+                if DMY._comp and DMY._comp.db then
+                    DMY._comp.db.exportChatLineCount = value
                 end
                 currentLines = value
                 UpdateSliderLabel()
@@ -735,8 +735,8 @@ function DM2._CreateWindow(windowIndex, comp)
                 end)
                 chBtn:SetScript("OnClick", function()
                     gearMenu:Hide()
-                    if DM2._ExportToChatChannel then
-                        DM2._ExportToChatChannel(winIdx, ch, currentLines)
+                    if DMY._ExportToChatChannel then
+                        DMY._ExportToChatChannel(winIdx, ch, currentLines)
                     end
                 end)
                 yOff = yOff - 20
@@ -747,7 +747,7 @@ function DM2._CreateWindow(windowIndex, comp)
 
         -- Sync slider value on every show
         if gearMenu._slider then
-            local count = (DM2._comp and DM2._comp.db and DM2._comp.db.exportChatLineCount) or 5
+            local count = (DMY._comp and DMY._comp.db and DMY._comp.db.exportChatLineCount) or 5
             gearMenu._slider:SetValue(count)
         end
 
@@ -763,11 +763,11 @@ function DM2._CreateWindow(windowIndex, comp)
             gearMenu:SetPoint("BOTTOMLEFT", gearBtn, "TOPLEFT", 0, 2)
         end
         gearMenu:Show()
-        activeDM2Menu = gearMenu
+        activeDMYMenu = gearMenu
     end)
 
     -- Store window state
-    DM2._windows[windowIndex] = {
+    DMY._windows[windowIndex] = {
         frame = frame,
         background = background,
         header = header,
@@ -793,6 +793,6 @@ end
 -- Accessors
 --------------------------------------------------------------------------------
 
-DM2.HEADER_HEIGHT = HEADER_HEIGHT
-DM2.ICON_SIZE = ICON_SIZE
-DM2.NAME_WIDTH = NAME_WIDTH
+DMY.HEADER_HEIGHT = HEADER_HEIGHT
+DMY.ICON_SIZE = ICON_SIZE
+DMY.NAME_WIDTH = NAME_WIDTH

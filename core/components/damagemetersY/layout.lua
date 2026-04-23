@@ -1,45 +1,45 @@
--- damagemetersv2/layout.lua - Column width calculation, bar row layout, window sizing
+-- damagemetersY/layout.lua - Column width calculation, bar row layout, window sizing
 local _, addon = ...
-local DM2 = addon.DamageMetersV2
+local DMY = addon.DamageMetersY
 
 --------------------------------------------------------------------------------
--- Uses DM2._UnifiedAbbreviate (defined in data.lua) for consistent formatting
+-- Uses DMY._UnifiedAbbreviate (defined in data.lua) for consistent formatting
 -- in both combat (secret values) and OOC (plain values).
 
 --------------------------------------------------------------------------------
 -- Column Width Calculation
 --------------------------------------------------------------------------------
 
-function DM2._CalculateColumnWidths(windowIndex, comp)
-    local win = DM2._windows[windowIndex]
+function DMY._CalculateColumnWidths(windowIndex, comp)
+    local win = DMY._windows[windowIndex]
     if not win then return end
 
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg then return end
 
     local db = comp.db
     local fw = tonumber(cfg.frameWidth or db.frameWidth) or 350
-    local numColumns = math.min(#cfg.columns, DM2.MAX_COLUMNS)
+    local numColumns = math.min(#cfg.columns, DMY.MAX_COLUMNS)
     if numColumns == 0 then numColumns = 1 end
     if cfg.sessionType ~= 0 then numColumns = 1 end  -- Current/Expired: single column only
 
     -- Available width after icon + name
-    local availableWidth = fw - DM2.ICON_SIZE - 6 - DM2.NAME_WIDTH - 8
+    local availableWidth = fw - DMY.ICON_SIZE - 6 - DMY.NAME_WIDTH - 8
     local colWidth = math.floor(availableWidth / numColumns)
 
     win._colWidth = colWidth
     win._numColumns = numColumns
 
     -- Position column headers (matching value text alignment)
-    local barLeftOffset = DM2.ICON_SIZE + 6 + DM2.NAME_WIDTH + 8
-    for c = 1, DM2.MAX_COLUMNS do
+    local barLeftOffset = DMY.ICON_SIZE + 6 + DMY.NAME_WIDTH + 8
+    for c = 1, DMY.MAX_COLUMNS do
         local ch = win.columnHeaders[c]
         local cr = win.columnClickRegions and win.columnClickRegions[c]
         if c <= numColumns then
             ch:ClearAllPoints()
             local rightEdge = fw - (numColumns - c) * colWidth
             ch:SetWidth(colWidth - 8)
-            ch:SetText(DM2._GetColumnHeader(cfg.columns[c].format))
+            ch:SetText(DMY._GetColumnHeader(cfg.columns[c].format))
             if numColumns == 1 then
                 ch:SetJustifyH("RIGHT")
                 ch:SetPoint("RIGHT", win.header, "LEFT", rightEdge - 4, 0)
@@ -70,7 +70,7 @@ end
 
 local THIN_BAR_HEIGHT = 4
 
-function DM2._ApplyBarMode(row, barMode, barAreaLeft)
+function DMY._ApplyBarMode(row, barMode, barAreaLeft)
     local bar = row.bar
     local barBg = row.barBg
     if not bar or not barBg then return end
@@ -105,11 +105,11 @@ end
 -- Bar Row Layout
 --------------------------------------------------------------------------------
 
-function DM2._LayoutBarRows(windowIndex, comp)
-    local win = DM2._windows[windowIndex]
+function DMY._LayoutBarRows(windowIndex, comp)
+    local win = DMY._windows[windowIndex]
     if not win then return end
 
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg then return end
 
     local db = comp.db
@@ -120,9 +120,9 @@ function DM2._LayoutBarRows(windowIndex, comp)
     local colWidth = win._colWidth or 100
 
     -- Alignment: 1 col = right; 2+ = first left, last right, middle centered in column
-    local barLeftOffset = DM2.ICON_SIZE + 6 + DM2.NAME_WIDTH + 8
+    local barLeftOffset = DMY.ICON_SIZE + 6 + DMY.NAME_WIDTH + 8
     local function LayoutRowValueTexts(row)
-        for c = 1, DM2.MAX_COLUMNS do
+        for c = 1, DMY.MAX_COLUMNS do
             local vt = row.valueTexts[c]
             if c <= numColumns then
                 vt:ClearAllPoints()
@@ -151,18 +151,18 @@ function DM2._LayoutBarRows(windowIndex, comp)
 
     local barMode = db.barMode or "default"
 
-    for r = 1, DM2.MAX_POOL do
+    for r = 1, DMY.MAX_POOL do
         local row = win.barRows[r]
         row:SetHeight(barHeight)
         row:SetPoint("TOPLEFT", win.scrollContent, "TOPLEFT", 0, -((r - 1) * (barHeight + barSpacing)))
         row:SetPoint("RIGHT", win.scrollContent, "RIGHT", 0, 0)
 
         -- Icon size matches bar height
-        local iconSz = math.min(barHeight, DM2.ICON_SIZE)
+        local iconSz = math.min(barHeight, DMY.ICON_SIZE)
         row.icon:SetSize(iconSz, iconSz)
 
         -- Reposition bar/barBg based on bar mode
-        DM2._ApplyBarMode(row, barMode, barLeftOffset)
+        DMY._ApplyBarMode(row, barMode, barLeftOffset)
 
         -- Position value texts at column offsets
         LayoutRowValueTexts(row)
@@ -171,10 +171,10 @@ function DM2._LayoutBarRows(windowIndex, comp)
     -- Layout pinned row
     local pinnedRow = win.pinnedRow
     pinnedRow:SetHeight(barHeight)
-    local iconSz = math.min(barHeight, DM2.ICON_SIZE)
+    local iconSz = math.min(barHeight, DMY.ICON_SIZE)
     pinnedRow.icon:SetSize(iconSz, iconSz)
     if pinnedRow.nameContainer then pinnedRow.nameContainer:SetHeight(barHeight) end
-    DM2._ApplyBarMode(pinnedRow, barMode, barLeftOffset)
+    DMY._ApplyBarMode(pinnedRow, barMode, barLeftOffset)
     LayoutRowValueTexts(pinnedRow)
 
     -- Adjust scroll area bottom to leave room for pinned row
@@ -186,11 +186,11 @@ end
 -- Refresh Bar Rows — Populate visible rows from merged data
 --------------------------------------------------------------------------------
 
-function DM2._RefreshBarRows(windowIndex, comp)
-    local win = DM2._windows[windowIndex]
+function DMY._RefreshBarRows(windowIndex, comp)
+    local win = DMY._windows[windowIndex]
     if not win then return end
 
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg then return end
 
     local db = comp.db
@@ -198,7 +198,7 @@ function DM2._RefreshBarRows(windowIndex, comp)
     local barHeight = tonumber(db.barHeight) or 22
     local barSpacing = tonumber(db.barSpacing) or 2
     local numColumns = win._numColumns or 1
-    local inCombat = DM2._inCombat
+    local inCombat = DMY._inCombat
 
     -- Calculate visible rows
     local scrollAreaHeight = win.scrollArea:GetHeight()
@@ -206,7 +206,7 @@ function DM2._RefreshBarRows(windowIndex, comp)
 
     if not merged or #merged.playerOrder == 0 then
         -- No data: hide all rows
-        for r = 1, DM2.MAX_POOL do
+        for r = 1, DMY.MAX_POOL do
             win.barRows[r]:Hide()
         end
         win.pinnedRow:Hide()
@@ -225,7 +225,7 @@ function DM2._RefreshBarRows(windowIndex, comp)
     local localPlayerVisible = false
 
     -- Populate visible rows
-    for r = 1, DM2.MAX_POOL do
+    for r = 1, DMY.MAX_POOL do
         local row = win.barRows[r]
         local dataIndex = offset + r
         if dataIndex <= totalRows then
@@ -238,7 +238,7 @@ function DM2._RefreshBarRows(windowIndex, comp)
                     localPlayerVisible = true
                 end
 
-                DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat)
+                DMY._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat)
                 row:Show()
             else
                 row:Hide()
@@ -264,7 +264,7 @@ function DM2._RefreshBarRows(windowIndex, comp)
     if showPinned and localPlayerKey and not localPlayerVisible then
         local player = merged.players[localPlayerKey]
         if player then
-            DM2._PopulateBarRow(win.pinnedRow, player, localPlayerKey, cfg, merged, numColumns, inCombat)
+            DMY._PopulateBarRow(win.pinnedRow, player, localPlayerKey, cfg, merged, numColumns, inCombat)
             win.pinnedRow:Show()
             win.pinnedSeparator:Show()
         else
@@ -281,8 +281,8 @@ end
 -- Populate a single bar row with player data
 --------------------------------------------------------------------------------
 
-function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat)
-    local comp = DM2._comp
+function DMY._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat)
+    local comp = DMY._comp
     local db = comp and comp.db
 
     -- Name display (SetText accepts secrets during combat)
@@ -305,13 +305,13 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
 
     -- Icon (uses styling module)
     if db then
-        DM2._StyleBarRow(row, player, db)
+        DMY._StyleBarRow(row, player, db)
     end
 
     -- Bar color
     local cr, cg, cb = 0.6, 0.6, 0.6
     if db then
-        cr, cg, cb = DM2._GetBarColor(player, db)
+        cr, cg, cb = DMY._GetBarColor(player, db)
     end
 
     -- Show/hide bar fill and background; mode-aware text parenting
@@ -323,7 +323,7 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
         row.bar:Hide()
         row.barBg:Hide()
         if barTex then barTex:SetAlpha(1) end
-        for vc = 1, DM2.MAX_COLUMNS do
+        for vc = 1, DMY.MAX_COLUMNS do
             local vt = row.valueTexts[vc]
             if vt then vt:SetParent(row) end
         end
@@ -331,7 +331,7 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
         row.bar:Show()
         row.barBg:Hide()
         if barTex then barTex:SetAlpha(0) end
-        for vc = 1, DM2.MAX_COLUMNS do
+        for vc = 1, DMY.MAX_COLUMNS do
             local vt = row.valueTexts[vc]
             if vt then vt:SetParent(row.bar) end
         end
@@ -339,7 +339,7 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
         row.bar:Show()
         row.barBg:Show()
         if barTex then barTex:SetAlpha(1) end
-        for vc = 1, DM2.MAX_COLUMNS do
+        for vc = 1, DMY.MAX_COLUMNS do
             local vt = row.valueTexts[vc]
             if vt then vt:SetParent(row) end
         end
@@ -348,7 +348,7 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
         row.bar:Show()
         row.barBg:Show()
         if barTex then barTex:SetAlpha(1) end
-        for vc = 1, DM2.MAX_COLUMNS do
+        for vc = 1, DMY.MAX_COLUMNS do
             local vt = row.valueTexts[vc]
             if vt then vt:SetParent(row.bar) end
         end
@@ -368,7 +368,7 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
     end
 
     -- Single full-width bar: represents primary column data.
-    local primaryDef = cfg.columns[1] and DM2.COLUMN_FORMATS[cfg.columns[1].format]
+    local primaryDef = cfg.columns[1] and DMY.COLUMN_FORMATS[cfg.columns[1].format]
     if primaryDef and showBars then
         local meterType = primaryDef.primary or primaryDef.meterType
         local maxAmount = merged.maxAmounts[meterType] or 1
@@ -409,7 +409,7 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
         local colDef = cfg.columns[c]
         if colDef then
             if inCombat then
-                local def = DM2.COLUMN_FORMATS[colDef.format]
+                local def = DMY.COLUMN_FORMATS[colDef.format]
                 if def then
                     if c == 1 then
                         -- Primary column: use session-level combatSources values
@@ -417,14 +417,14 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
                         local val = player.values[mt]
                         if val then
                             if def.primary then
-                                local pAbbr = DM2._UnifiedAbbreviate(val[def.primaryField] or 0)
-                                local sAbbr = DM2._UnifiedAbbreviate(val[def.secondaryField] or 0)
+                                local pAbbr = DMY._UnifiedAbbreviate(val[def.primaryField] or 0)
+                                local sAbbr = DMY._UnifiedAbbreviate(val[def.secondaryField] or 0)
                                 local ok = pcall(vt.SetFormattedText, vt, "%s (%s)", pAbbr, sAbbr)
                                 if not ok then
                                     vt:SetText(pAbbr)
                                 end
                             else
-                                vt:SetText(DM2._UnifiedAbbreviate(val[def.valueField or "totalAmount"] or 0))
+                                vt:SetText(DMY._UnifiedAbbreviate(val[def.valueField or "totalAmount"] or 0))
                             end
                         end
                     else
@@ -435,7 +435,7 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
                         local secTotal = idLookup and idLookup[mt]
 
                         if secTotal then
-                            vt:SetText(DM2._UnifiedAbbreviate(secTotal))
+                            vt:SetText(DMY._UnifiedAbbreviate(secTotal))
                         else
                             vt:SetText("\226\128\148") -- em dash
                         end
@@ -443,7 +443,7 @@ function DM2._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat
                 end
             else
                 -- OOC: formatted text
-                vt:SetText(DM2._FormatColumnValue(player, colDef.format))
+                vt:SetText(DMY._FormatColumnValue(player, colDef.format))
             end
 
             -- Apply value text color and opacity (same for combat and OOC)

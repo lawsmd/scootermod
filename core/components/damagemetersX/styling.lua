@@ -1,18 +1,18 @@
 local addonName, addon = ...
 
--- damagemeters/styling.lua — Entry-level styling orchestration, enhanced title system,
+-- damagemetersX/styling.lua — Entry-level styling orchestration, enhanced title system,
 -- window/title/timer/button/header styling, main ApplyDamageMeterStyling orchestrator.
 
-local DM = addon.DamageMeters
+local DMX = addon.DamageMetersX
 
 -- Local aliases for frequently used namespace functions
-local SafeSetAlpha = DM._SafeSetAlpha
-local SafeSetShown = DM._SafeSetShown
-local PlayerInCombat = DM._PlayerInCombat
-local getWindowState = DM._getWindowState
-local getElementState = DM._getElementState
-local elementState = DM._elementState
-local knownSessionWindows = DM._knownSessionWindows
+local SafeSetAlpha = DMX._SafeSetAlpha
+local SafeSetShown = DMX._SafeSetShown
+local PlayerInCombat = DMX._PlayerInCombat
+local getWindowState = DMX._getWindowState
+local getElementState = DMX._getElementState
+local elementState = DMX._elementState
+local knownSessionWindows = DMX._knownSessionWindows
 
 --------------------------------------------------------------------------------
 -- Enhanced Title Feature: Display session type alongside meter type
@@ -235,7 +235,7 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
     -- Get/create clip frame for this session window
     local ws = getWindowState(sessionWindow)
     if not ws.clipFrame then
-        ws.clipFrame = DM._CreateClipFrame(sessionWindow)
+        ws.clipFrame = DMX._CreateClipFrame(sessionWindow)
     end
     if ws.clipFrame then ws.clipFrame:Show() end
 
@@ -246,8 +246,8 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
     -- Get/create entry overlay
     local elSt = getElementState(entry)
     if not elSt.entryOverlay then
-        elSt.entryOverlay = DM._CreateEntryOverlay(parentFrame)
-        DM._registerDMOverlay(sessionWindow, elSt.entryOverlay)
+        elSt.entryOverlay = DMX._CreateEntryOverlay(parentFrame)
+        DMX._registerDMOverlay(sessionWindow, elSt.entryOverlay)
     end
 
     local overlay = elSt.entryOverlay
@@ -256,16 +256,16 @@ local function ApplySingleEntryStyle(entry, db, sessionWindow)
     classToken = classToken or ""
 
     -- OPT-18: Skip full restyle if entry hasn't changed since last full pass
-    if elSt._cacheGen == DM._dmStyleGeneration and elSt._cacheClass == classToken and classToken ~= "" then
-        DM._HideBlizzardEntryContent(entry)
-        DM._UpdateEntryOverlayData(overlay, entry, db)
+    if elSt._cacheGen == DMX._dmStyleGeneration and elSt._cacheClass == classToken and classToken ~= "" then
+        DMX._HideBlizzardEntryContent(entry)
+        DMX._UpdateEntryOverlayData(overlay, entry, db)
         overlay:Show()
         return
     end
 
-    DM._PopulateEntryOverlay(overlay, entry, db, sessionWindow)
+    DMX._PopulateEntryOverlay(overlay, entry, db, sessionWindow)
 
-    elSt._cacheGen = DM._dmStyleGeneration
+    elSt._cacheGen = DMX._dmStyleGeneration
     elSt._cacheClass = classToken
 end
 
@@ -709,8 +709,8 @@ end
 
 -- OPT-18: Bump generation and restyle all visible entries in one pass.
 local function styleAllVisibleEntries(sessionWindow, db)
-    DM._dmStyleGeneration = DM._dmStyleGeneration + 1
-    DM._ForEachVisibleEntry(sessionWindow, function(entryFrame)
+    DMX._dmStyleGeneration = DMX._dmStyleGeneration + 1
+    DMX._ForEachVisibleEntry(sessionWindow, function(entryFrame)
         ApplySingleEntryStyle(entryFrame, db, sessionWindow)
     end)
 end
@@ -722,15 +722,15 @@ local function UpdateAllOverlayData(comp)
     if comp._ScootDBProxy and comp.db == comp._ScootDBProxy then return end
     local dmFrame = _G.DamageMeter
     if not dmFrame or not dmFrame:IsShown() then
-        DM._hideAllDMOverlays()
+        DMX._hideAllDMOverlays()
         return
     end
-    local windows = DM._GetAllSessionWindows()
+    local windows = DMX._GetAllSessionWindows()
     for _, sessionWindow in ipairs(windows) do
-        DM._ForEachVisibleEntry(sessionWindow, function(entryFrame)
+        DMX._ForEachVisibleEntry(sessionWindow, function(entryFrame)
             local elSt = elementState[entryFrame]
             if elSt and elSt.entryOverlay and elSt.entryOverlay:IsShown() then
-                DM._UpdateEntryOverlayData(elSt.entryOverlay, entryFrame, comp.db)
+                DMX._UpdateEntryOverlayData(elSt.entryOverlay, entryFrame, comp.db)
             else
                 -- Entry needs overlay (new post-reset entry, or overlay hidden by reset cleanup)
                 ApplySingleEntryStyle(entryFrame, comp.db, sessionWindow)
@@ -743,7 +743,7 @@ local function UpdateAllOverlayData(comp)
             if ok and shown then
                 local elSt = elementState[lpe]
                 if elSt and elSt.entryOverlay and elSt.entryOverlay:IsShown() then
-                    DM._UpdateEntryOverlayData(elSt.entryOverlay, lpe, comp.db)
+                    DMX._UpdateEntryOverlayData(elSt.entryOverlay, lpe, comp.db)
                 else
                     ApplySingleEntryStyle(lpe, comp.db, sessionWindow)
                 end
@@ -752,7 +752,7 @@ local function UpdateAllOverlayData(comp)
                 local elSt = elementState[lpe]
                 if elSt and elSt.entryOverlay then
                     elSt.entryOverlay:Hide()
-                    DM._RestoreBlizzardEntryContent(lpe)
+                    DMX._RestoreBlizzardEntryContent(lpe)
                 end
             end
         end
@@ -769,10 +769,10 @@ local function RefreshVisibleOverlays(comp)
     if not dmFrame or not dmFrame:IsShown() then return end
 
     local db = comp.db
-    local windows = DM._GetAllSessionWindows()
+    local windows = DMX._GetAllSessionWindows()
     for _, sessionWindow in ipairs(windows) do
         -- Refresh all visible scroll entries
-        DM._ForEachVisibleEntry(sessionWindow, function(entryFrame)
+        DMX._ForEachVisibleEntry(sessionWindow, function(entryFrame)
             ApplySingleEntryStyle(entryFrame, db, sessionWindow)
         end)
 
@@ -786,7 +786,7 @@ local function RefreshVisibleOverlays(comp)
                 local elSt = elementState[lpe]
                 if elSt and elSt.entryOverlay then
                     elSt.entryOverlay:Hide()
-                    DM._RestoreBlizzardEntryContent(lpe)
+                    DMX._RestoreBlizzardEntryContent(lpe)
                 end
             end
         end
@@ -799,41 +799,41 @@ end
 
 -- Main styling function
 local function ApplyDamageMeterStyling(self)
-    DM._InvalidateSessionWindowCache()
+    DMX._InvalidateSessionWindowCache()
 
-    -- If V2 is active, V1 becomes a no-op
+    -- If Y is active, X becomes a no-op
     if addon.IsModuleEnabled and addon:IsModuleEnabled("damageMeter", "damageMeterV2") then
-        if addon.DamageMetersV2 and addon.DamageMetersV2._initialized then
-            DM._hideAllDMOverlays()
+        if addon.DamageMetersY and addon.DamageMetersY._initialized then
+            DMX._hideAllDMOverlays()
             return
         end
     end
 
     local dmFrame = _G.DamageMeter
     if not dmFrame then
-        DM._hideAllDMOverlays()
+        DMX._hideAllDMOverlays()
         return
     end
 
     -- Frame exists but is hidden (CVar disabled, etc.) — clean up overlays
     if not dmFrame:IsShown() then
-        DM._hideAllDMOverlays()
+        DMX._hideAllDMOverlays()
         return
     end
 
     -- Zero-Touch: if still on proxy DB, do nothing
     if self._ScootDBProxy and self.db == self._ScootDBProxy then
-        DM._hideAllDMOverlays()
+        DMX._hideAllDMOverlays()
         return
     end
 
     local db = self.db
     if type(db) ~= "table" then
-        DM._hideAllDMOverlays()
+        DMX._hideAllDMOverlays()
         return
     end
 
-    local windows = DM._GetAllSessionWindows()
+    local windows = DMX._GetAllSessionWindows()
 
     -- Combat-safe: defer window-level styling during combat
     -- No cleanup here: meters still visible, just can't restyle
@@ -846,7 +846,7 @@ local function ApplyDamageMeterStyling(self)
         knownSessionWindows[sessionWindow] = true  -- track for cleanup
 
         -- Reset this window's UIParent-parented overlays before re-styling visible entries
-        DM._hideWindowOverlays(sessionWindow)
+        DMX._hideWindowOverlays(sessionWindow)
 
         -- Apply window styling
         ApplyWindowStyling(sessionWindow, db)
@@ -882,8 +882,8 @@ local function ApplyDamageMeterStyling(self)
 
         ApplyHeaderBackdropStyling(sessionWindow, db)
 
-        -- Apply export button styling (late-binding: DM._ApplyExportButtonStyling set by export.lua)
-        DM._ApplyExportButtonStyling(sessionWindow, db)
+        -- Apply export button styling (late-binding: DMX._ApplyExportButtonStyling set by export.lua)
+        DMX._ApplyExportButtonStyling(sessionWindow, db)
 
         -- OPT-18: Bump generation and style all visible entries in this window
         styleAllVisibleEntries(sessionWindow, db)
@@ -908,14 +908,14 @@ local function ApplyDamageMeterStyling(self)
     end
 
     -- Apply state-based opacity (OOC fade)
-    DM._RefreshDamageMeterOpacity(self)
+    DMX._RefreshDamageMeterOpacity(self)
 end
 
 --------------------------------------------------------------------------------
 -- Namespace Promotion
 --------------------------------------------------------------------------------
 
-DM._ApplyDamageMeterStyling = ApplyDamageMeterStyling
-DM._UpdateAllOverlayData = UpdateAllOverlayData
-DM._RefreshVisibleOverlays = RefreshVisibleOverlays
-DM._RefreshAllWindowTitles = RefreshAllWindowTitles
+DMX._ApplyDamageMeterStyling = ApplyDamageMeterStyling
+DMX._UpdateAllOverlayData = UpdateAllOverlayData
+DMX._RefreshVisibleOverlays = RefreshVisibleOverlays
+DMX._RefreshAllWindowTitles = RefreshAllWindowTitles

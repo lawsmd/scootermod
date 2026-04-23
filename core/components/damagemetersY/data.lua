@@ -1,12 +1,12 @@
--- damagemetersv2/data.lua - Number formatting, death aggregation, merged data pipeline
+-- damagemetersY/data.lua - Number formatting, death aggregation, merged data pipeline
 local _, addon = ...
-local DM2 = addon.DamageMetersV2
+local DMY = addon.DamageMetersY
 
 --------------------------------------------------------------------------------
 -- Number Formatting
 --------------------------------------------------------------------------------
 
-function DM2._FormatCompact(n)
+function DMY._FormatCompact(n)
     if not n or n == 0 then return "0" end
     if n >= 1000000000 then return string.format("%.1fB", n / 1000000000)
     elseif n >= 1000000 then return string.format("%.1fM", n / 1000000)
@@ -14,7 +14,7 @@ function DM2._FormatCompact(n)
     else return string.format("%.0f", n) end
 end
 
-function DM2._FormatDuration(sec)
+function DMY._FormatDuration(sec)
     if not sec or sec <= 0 then return "0:00" end
     sec = math.floor(sec)
     if sec >= 3600 then
@@ -51,8 +51,8 @@ end
 -- non-secret GUIDs during combat, enabling live secondary column values.
 --------------------------------------------------------------------------------
 
-DM2._guidCache = {}       -- { [guid] = { classFilename, specIconID, isLocalPlayer } }
-DM2._identityToGUID = {}  -- { [identityKey] = guid or false (false = collision) }
+DMY._guidCache = {}       -- { [guid] = { classFilename, specIconID, isLocalPlayer } }
+DMY._identityToGUID = {}  -- { [identityKey] = guid or false (false = collision) }
 
 local function BuildIdentityKey(classFilename, specIconID, isLocalPlayer)
     return (classFilename or "UNKNOWN") .. "_" .. tostring(specIconID or 0) .. "_" .. tostring(isLocalPlayer)
@@ -67,15 +67,15 @@ end
 -- Out of combat, all columns are GUID-correlated via session-level lookups.
 --------------------------------------------------------------------------------
 
-function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
+function DMY._QueryMergedData(sessionType, sessionID, columns, inCombat)
     if not C_DamageMeter then return nil end
     if not C_DamageMeter.GetCombatSessionFromType and not C_DamageMeter.GetCombatSessionFromID then
         return nil
     end
     if not columns or #columns == 0 then return nil end
 
-    local FORMATS = DM2.COLUMN_FORMATS
-    local EXCLUDED = DM2.SECONDARY_EXCLUDED_FORMATS
+    local FORMATS = DMY.COLUMN_FORMATS
+    local EXCLUDED = DMY.SECONDARY_EXCLUDED_FORMATS
 
     -- Determine which meter types are needed for the primary column
     local primaryDef = FORMATS[columns[1].format]
@@ -89,7 +89,7 @@ function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
         neededTypes = {}
         neededTypes[primaryType] = true
     else
-        neededTypes = DM2._GetNeededMeterTypes(columns)
+        neededTypes = DMY._GetNeededMeterTypes(columns)
     end
 
     -- Query each meter type via session-level API
@@ -133,20 +133,20 @@ function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
         end
 
         -- Populate GUID cache + identity lookup from primary session
-        DM2._guidCache = {}
-        DM2._identityToGUID = {}
+        DMY._guidCache = {}
+        DMY._identityToGUID = {}
         for _, source in ipairs(primarySession.combatSources) do
             if source.sourceGUID then
                 local ikey = BuildIdentityKey(source.classFilename, source.specIconID, source.isLocalPlayer)
-                DM2._guidCache[source.sourceGUID] = {
+                DMY._guidCache[source.sourceGUID] = {
                     classFilename = source.classFilename,
                     specIconID = source.specIconID,
                     isLocalPlayer = source.isLocalPlayer,
                 }
-                if DM2._identityToGUID[ikey] == nil then
-                    DM2._identityToGUID[ikey] = source.sourceGUID
+                if DMY._identityToGUID[ikey] == nil then
+                    DMY._identityToGUID[ikey] = source.sourceGUID
                 else
-                    DM2._identityToGUID[ikey] = false -- collision: same class+spec
+                    DMY._identityToGUID[ikey] = false -- collision: same class+spec
                 end
             end
         end
@@ -154,7 +154,7 @@ function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
 
     -- Combat: determine secondary meter types needed and query via source API
     local secondaryByIdentity  -- { [identityKey] = { [meterType] = totalAmount } }
-    if inCombat and next(DM2._guidCache) then
+    if inCombat and next(DMY._guidCache) then
         -- Collect secondary meter types from non-primary, non-excluded columns
         local secondaryTypes = {}
         for c = 2, #columns do
@@ -187,10 +187,10 @@ function DM2._QueryMergedData(sessionType, sessionID, columns, inCombat)
             end
 
             -- Query source-level API per cached GUID per secondary meter type
-            for guid, info in pairs(DM2._guidCache) do
+            for guid, info in pairs(DMY._guidCache) do
                 local ikey = BuildIdentityKey(info.classFilename, info.specIconID, info.isLocalPlayer)
                 -- Skip collision keys
-                if DM2._identityToGUID[ikey] ~= false then
+                if DMY._identityToGUID[ikey] ~= false then
                     if not secondaryByIdentity[ikey] then
                         secondaryByIdentity[ikey] = {}
                     end
@@ -322,20 +322,20 @@ local function UnifiedAbbreviate(value)
         if ok then return result end
     end
     -- Fallback: try custom formatter (only works on plain numbers, not secrets)
-    local fmtOk, fmtResult = pcall(DM2._FormatCompact, value)
+    local fmtOk, fmtResult = pcall(DMY._FormatCompact, value)
     if fmtOk then return fmtResult end
     -- Ultimate fallback: return raw value (SetText will handle secrets)
     return value
 end
 
-DM2._UnifiedAbbreviate = UnifiedAbbreviate
+DMY._UnifiedAbbreviate = UnifiedAbbreviate
 
 --------------------------------------------------------------------------------
 -- Format a column value for display (works both OOC and combat)
 --------------------------------------------------------------------------------
 
-function DM2._FormatColumnValue(player, formatKey)
-    local def = DM2.COLUMN_FORMATS[formatKey]
+function DMY._FormatColumnValue(player, formatKey)
+    local def = DMY.COLUMN_FORMATS[formatKey]
     if not def then return "" end
 
     if def.primary then
@@ -354,8 +354,8 @@ function DM2._FormatColumnValue(player, formatKey)
 end
 
 --- Returns the raw numeric value for a column (used for bar fill).
-function DM2._GetColumnValue(player, formatKey)
-    local def = DM2.COLUMN_FORMATS[formatKey]
+function DMY._GetColumnValue(player, formatKey)
+    local def = DMY.COLUMN_FORMATS[formatKey]
     if not def then return 0 end
     local meterType = def.primary or def.meterType
     local val = player.values[meterType]
@@ -364,8 +364,8 @@ function DM2._GetColumnValue(player, formatKey)
 end
 
 --- Returns the max amount for a column's meter type.
-function DM2._GetColumnMax(mergedData, formatKey)
-    local def = DM2.COLUMN_FORMATS[formatKey]
+function DMY._GetColumnMax(mergedData, formatKey)
+    local def = DMY.COLUMN_FORMATS[formatKey]
     if not def then return 1 end
     local meterType = def.primary or def.meterType
     return mergedData.maxAmounts[meterType] or 1

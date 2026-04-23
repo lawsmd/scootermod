@@ -1,4 +1,4 @@
--- damagemeters/core.lua - V1 damage meter: session state, overlay management, Edit Mode integration
+-- damagemetersX/core.lua - Damage Meters X: session state, overlay management, Edit Mode integration
 local addonName, addon = ...
 
 -- Damage Meters Component
@@ -12,8 +12,8 @@ local addonName, addon = ...
 --   when the specific config tables exist.
 
 -- Namespace setup
-addon.DamageMeters = addon.DamageMeters or {}
-local DM = addon.DamageMeters
+addon.DamageMetersX = addon.DamageMetersX or {}
+local DMX = addon.DamageMetersX
 
 --------------------------------------------------------------------------------
 -- Utility Functions
@@ -57,10 +57,10 @@ local function GetClassColor(classToken)
     return 1, 1, 1, 1
 end
 
-DM._SafeSetAlpha = SafeSetAlpha
-DM._SafeSetShown = SafeSetShown
-DM._PlayerInCombat = PlayerInCombat
-DM._GetClassColor = GetClassColor
+DMX._SafeSetAlpha = SafeSetAlpha
+DMX._SafeSetShown = SafeSetShown
+DMX._PlayerInCombat = PlayerInCombat
+DMX._GetClassColor = GetClassColor
 
 --------------------------------------------------------------------------------
 -- JiberishIcons Integration Helpers
@@ -95,7 +95,7 @@ end
 -- Export to addon namespace for UI access
 addon.IsJiberishIconsAvailable = IsJiberishIconsAvailable
 addon.GetJiberishIconsStyles = GetJiberishIconsStyles
-DM._GetJiberishIcons = GetJiberishIcons
+DMX._GetJiberishIcons = GetJiberishIcons
 
 --------------------------------------------------------------------------------
 -- State Tables
@@ -125,7 +125,7 @@ end
 -- OPT-18: Style generation counter for dirty-flag caching.
 -- Bumped before every full-pass ForEachVisibleEntry call so that subsequent
 -- per-entry InitEntry calls with matching classToken can skip redundant work.
-DM._dmStyleGeneration = 0
+DMX._dmStyleGeneration = 0
 
 -- OPT-27: Cache GetAllSessionWindows result to avoid per-call table allocation.
 -- Invalidated on DM reset and full restyle (ApplyDamageMeterStyling).
@@ -141,12 +141,12 @@ local windowOverlays = setmetatable({}, { __mode = "k" })
 -- windowOverlays/windowState are weak-key tables and can't be reliably iterated.
 local knownSessionWindows = {}
 
-DM._windowState = windowState
-DM._elementState = elementState
-DM._windowOverlays = windowOverlays
-DM._knownSessionWindows = knownSessionWindows
-DM._getWindowState = getWindowState
-DM._getElementState = getElementState
+DMX._windowState = windowState
+DMX._elementState = elementState
+DMX._windowOverlays = windowOverlays
+DMX._knownSessionWindows = knownSessionWindows
+DMX._getWindowState = getWindowState
+DMX._getElementState = getElementState
 
 --------------------------------------------------------------------------------
 -- Overlay Registry & Visibility Management
@@ -173,8 +173,8 @@ local function hideAllDMOverlays()
     for _, overlays in pairs(windowOverlays) do
         for _, overlay in ipairs(overlays) do
             if overlay._lastEntry then
-                -- Late-binding: DM._RestoreBlizzardEntryContent set by overlays.lua
-                DM._RestoreBlizzardEntryContent(overlay._lastEntry)
+                -- Late-binding: DMX._RestoreBlizzardEntryContent set by overlays.lua
+                DMX._RestoreBlizzardEntryContent(overlay._lastEntry)
             end
             overlay:Hide()
         end
@@ -195,15 +195,15 @@ local function hideAllDMOverlays()
     end
 end
 
-DM._registerDMOverlay = registerDMOverlay
-DM._hideWindowOverlays = hideWindowOverlays
-DM._hideAllDMOverlays = hideAllDMOverlays
+DMX._registerDMOverlay = registerDMOverlay
+DMX._hideWindowOverlays = hideWindowOverlays
+DMX._hideAllDMOverlays = hideAllDMOverlays
 
 --------------------------------------------------------------------------------
 -- Slash command handlers (/dmshow, /dmreset)
 --------------------------------------------------------------------------------
 
-function DM._SlashToggleShow()
+function DMX._SlashToggleShow()
     local profile = addon.db and addon.db.profile
     if not profile then return end
 
@@ -256,7 +256,7 @@ function DM._SlashToggleShow()
     end
 end
 
-function DM._SlashReset()
+function DMX._SlashReset()
     if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
         C_DamageMeter.ResetAllCombatSessions()
         addon:Print("Damage Meter data reset.")
@@ -276,13 +276,13 @@ local function GetCurrentZoneLabel()
     end
 end
 
-DM._dmResetZoneSnapshot = nil
+DMX._dmResetZoneSnapshot = nil
 
 local function SnapshotResetZone()
-    DM._dmResetZoneSnapshot = GetCurrentZoneLabel()
+    DMX._dmResetZoneSnapshot = GetCurrentZoneLabel()
 end
 
-DM._GetCurrentZoneLabel = GetCurrentZoneLabel
+DMX._GetCurrentZoneLabel = GetCurrentZoneLabel
 
 --------------------------------------------------------------------------------
 -- Session Window Discovery
@@ -402,10 +402,10 @@ local function GetScrollSignature()
     return ""
 end
 
-DM._InvalidateSessionWindowCache = InvalidateSessionWindowCache
-DM._GetAllSessionWindows = GetAllSessionWindows
-DM._ForEachVisibleEntry = ForEachVisibleEntry
-DM._GetScrollSignature = GetScrollSignature
+DMX._InvalidateSessionWindowCache = InvalidateSessionWindowCache
+DMX._GetAllSessionWindows = GetAllSessionWindows
+DMX._ForEachVisibleEntry = ForEachVisibleEntry
+DMX._GetScrollSignature = GetScrollSignature
 
 --------------------------------------------------------------------------------
 -- State-Based Opacity (Out-of-Combat Fade)
@@ -449,21 +449,21 @@ local function RefreshDamageMeterOpacity(comp)
     end
 end
 
-DM._RefreshDamageMeterOpacity = RefreshDamageMeterOpacity
+DMX._RefreshDamageMeterOpacity = RefreshDamageMeterOpacity
 
 --------------------------------------------------------------------------------
 -- Component Registration
 --------------------------------------------------------------------------------
 
 addon:RegisterComponentInitializer(function(self)
-    -- Gate: only register if V1 sub-toggle is enabled
+    -- Gate: only register if X sub-toggle is enabled (DB key: "damageMeter")
     if not self:IsModuleEnabled("damageMeter", "damageMeter") then return end
 
     local Component = addon.ComponentPrototype
 
     local damageMeter = Component:New({
         id = "damageMeter",
-        name = "Damage Meter",
+        name = "Damage Meters X",
         frameName = "DamageMeter",
         settings = {
             -- Edit Mode-managed settings (11 total)
@@ -598,15 +598,15 @@ addon:RegisterComponentInitializer(function(self)
             autoResetPrompt = { type = "addon", default = true, ui = { hidden = true } },
             enableSlashDM = { type = "addon", default = false, ui = { hidden = true } },
         },
-        ApplyStyling = function(self) DM._ApplyDamageMeterStyling(self) end,
+        ApplyStyling = function(self) DMX._ApplyDamageMeterStyling(self) end,
         RefreshOpacity = function(self) RefreshDamageMeterOpacity(self) end,
     })
 
     self:RegisterComponent(damageMeter)
 
     -- Initialize background inspect cache for export spec/ilvl data
-    if DM._InitInspectCache then
-        DM._InitInspectCache()
+    if DMX._InitInspectCache then
+        DMX._InitInspectCache()
     end
 
     -- Zone snapshot: track where data started
@@ -658,7 +658,7 @@ addon:RegisterComponentInitializer(function(self)
             end
             if PlayerInCombat() then
                 -- Combat: data-only update (bar fill + text, no style changes)
-                DM._UpdateAllOverlayData(comp)
+                DMX._UpdateAllOverlayData(comp)
             else
                 if comp and comp.ApplyStyling then
                     comp:ApplyStyling()
@@ -719,9 +719,9 @@ addon:RegisterComponentInitializer(function(self)
         if not comp or not comp.db then return end
         if comp._ScootDBProxy and comp.db == comp._ScootDBProxy then return end
         if PlayerInCombat() then
-            DM._UpdateAllOverlayData(comp)
+            DMX._UpdateAllOverlayData(comp)
         else
-            DM._RefreshVisibleOverlays(comp)
+            DMX._RefreshVisibleOverlays(comp)
         end
     end)
 
@@ -893,9 +893,9 @@ addon:RegisterComponentInitializer(function(self)
         push("=== Captured Stacks ===")
 
         -- EnsureComponentDB materialization stack (buffered by base/core.lua)
-        if DM._dmMaterializeStack then
+        if DMX._dmMaterializeStack then
             push("EnsureComponentDB materialized damageMeter:")
-            push(DM._dmMaterializeStack)
+            push(DMX._dmMaterializeStack)
         else
             push("EnsureComponentDB: NOT called for damageMeter this session")
         end
@@ -903,9 +903,9 @@ addon:RegisterComponentInitializer(function(self)
         push("")
 
         -- ApplyDamageMeterStyling first-call stack (buffered by styling.lua)
-        if DM._dmApplyTraced and DM._dmApplyStack then
+        if DMX._dmApplyTraced and DMX._dmApplyStack then
             push("ApplyDamageMeterStyling first call:")
-            push(DM._dmApplyStack)
+            push(DMX._dmApplyStack)
         else
             push("ApplyDamageMeterStyling: NOT called this session")
         end

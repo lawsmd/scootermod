@@ -141,11 +141,11 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("  /scoot debug dm export [overall|current|expired]")
             addon:Print("  /scoot debug dm frames")
             addon:Print("  /scoot debug dm trace <on|off>")
-            addon:Print("  /scoot debug dmv2 cvar")
-            addon:Print("  /scoot debug dmv2 api")
-            addon:Print("  /scoot debug dmv2 fields")
-            addon:Print("  /scoot debug dmv2 drilldown")
-            addon:Print("  /scoot debug dmv2 multicol")
+            addon:Print("  /scoot debug dmY cvar")
+            addon:Print("  /scoot debug dmY api")
+            addon:Print("  /scoot debug dmY fields")
+            addon:Print("  /scoot debug dmY drilldown")
+            addon:Print("  /scoot debug dmY multicol")
             return
         end
 
@@ -383,7 +383,7 @@ function SlashCmdList.SCOOT(msg, editBox)
                 if addon.DebugDMState then
                     addon.DebugDMState()
                 else
-                    addon:Print("DM state debug not available (damagemeters module missing).")
+                    addon:Print("DM state debug not available (damage meter module missing).")
                 end
                 return
             end
@@ -391,7 +391,7 @@ function SlashCmdList.SCOOT(msg, editBox)
                 if addon.DebugDMFrames then
                     addon.DebugDMFrames()
                 else
-                    addon:Print("DM frame debug not available (damagemeters module missing).")
+                    addon:Print("DM frame debug not available (damage meter module missing).")
                 end
                 return
             end
@@ -415,45 +415,45 @@ function SlashCmdList.SCOOT(msg, editBox)
             return
         end
 
-        -- /scoot debug dmv2 cvar
-        -- /scoot debug dmv2 api
-        if sub1 == "dmv2" then
+        -- /scoot debug dmY cvar
+        -- /scoot debug dmY api
+        if sub1 == "dmY" then
             if sub2 == "cvar" then
-                if addon.DebugDMV2CVar then addon.DebugDMV2CVar()
-                else addon:Print("DMV2 debug not available.") end
+                if addon.DebugDMYCVar then addon.DebugDMYCVar()
+                else addon:Print("DMY debug not available.") end
                 return
             end
             if sub2 == "api" then
-                if addon.DebugDMV2API then addon.DebugDMV2API()
-                else addon:Print("DMV2 debug not available.") end
+                if addon.DebugDMYAPI then addon.DebugDMYAPI()
+                else addon:Print("DMY debug not available.") end
                 return
             end
             if sub2 == "trace" then
-                if addon.DebugDMV2Trace then addon.DebugDMV2Trace()
-                else addon:Print("DMV2 trace not available.") end
+                if addon.DebugDMYTrace then addon.DebugDMYTrace()
+                else addon:Print("DMY trace not available.") end
                 return
             end
             if sub2 == "fields" then
-                if addon.DebugDMV2Fields then addon.DebugDMV2Fields()
-                else addon:Print("DMV2 debug not available.") end
+                if addon.DebugDMYFields then addon.DebugDMYFields()
+                else addon:Print("DMY debug not available.") end
                 return
             end
             if sub2 == "drilldown" then
-                if addon.DebugDMV2Drilldown then addon.DebugDMV2Drilldown()
-                else addon:Print("DMV2 debug not available.") end
+                if addon.DebugDMYDrilldown then addon.DebugDMYDrilldown()
+                else addon:Print("DMY debug not available.") end
                 return
             end
             if sub2 == "multicol" then
-                if addon.DebugDMV2Multicol then addon.DebugDMV2Multicol()
-                else addon:Print("DMV2 debug not available.") end
+                if addon.DebugDMYMulticol then addon.DebugDMYMulticol()
+                else addon:Print("DMY debug not available.") end
                 return
             end
-            addon:Print("Usage: /scoot debug dmv2 cvar")
-            addon:Print("       /scoot debug dmv2 api")
-            addon:Print("       /scoot debug dmv2 trace")
-            addon:Print("       /scoot debug dmv2 fields")
-            addon:Print("       /scoot debug dmv2 drilldown")
-            addon:Print("       /scoot debug dmv2 multicol")
+            addon:Print("Usage: /scoot debug dmY cvar")
+            addon:Print("       /scoot debug dmY api")
+            addon:Print("       /scoot debug dmY trace")
+            addon:Print("       /scoot debug dmY fields")
+            addon:Print("       /scoot debug dmY drilldown")
+            addon:Print("       /scoot debug dmY multicol")
             return
         end
 
@@ -545,8 +545,8 @@ function SlashCmdList.SCOOTDMSHOW(msg, editBox)
         return
     end
 
-    local isV2 = addon:IsModuleEnabled("damageMeter", "damageMeterV2")
-    local compId = isV2 and "damageMeterV2" or "damageMeter"
+    local isY = addon:IsModuleEnabled("damageMeter", "damageMeterV2")
+    local compId = isY and "damageMeterV2" or "damageMeter"
     local comp = addon.Components and addon.Components[compId]
     local enabled = comp and comp.db and comp.db.enableSlashDM
     if not enabled then
@@ -554,13 +554,13 @@ function SlashCmdList.SCOOTDMSHOW(msg, editBox)
         return
     end
 
-    if isV2 then
-        if addon.DamageMetersV2 and addon.DamageMetersV2._SlashToggleShow then
-            addon.DamageMetersV2._SlashToggleShow()
+    if isY then
+        if addon.DamageMetersY and addon.DamageMetersY._SlashToggleShow then
+            addon.DamageMetersY._SlashToggleShow()
         end
     else
-        if addon.DamageMeters and addon.DamageMeters._SlashToggleShow then
-            addon.DamageMeters._SlashToggleShow()
+        if addon.DamageMetersX and addon.DamageMetersX._SlashToggleShow then
+            addon.DamageMetersX._SlashToggleShow()
         end
     end
 end
@@ -575,8 +575,8 @@ function SlashCmdList.SCOOTDMRESET(msg, editBox)
         return
     end
 
-    local isV2 = addon:IsModuleEnabled("damageMeter", "damageMeterV2")
-    local compId = isV2 and "damageMeterV2" or "damageMeter"
+    local isY = addon:IsModuleEnabled("damageMeter", "damageMeterV2")
+    local compId = isY and "damageMeterV2" or "damageMeter"
     local comp = addon.Components and addon.Components[compId]
     local enabled = comp and comp.db and comp.db.enableSlashDM
     if not enabled then
@@ -584,13 +584,13 @@ function SlashCmdList.SCOOTDMRESET(msg, editBox)
         return
     end
 
-    if isV2 then
-        if addon.DamageMetersV2 and addon.DamageMetersV2._SlashReset then
-            addon.DamageMetersV2._SlashReset()
+    if isY then
+        if addon.DamageMetersY and addon.DamageMetersY._SlashReset then
+            addon.DamageMetersY._SlashReset()
         end
     else
-        if addon.DamageMeters and addon.DamageMeters._SlashReset then
-            addon.DamageMeters._SlashReset()
+        if addon.DamageMetersX and addon.DamageMetersX._SlashReset then
+            addon.DamageMetersX._SlashReset()
         end
     end
 end

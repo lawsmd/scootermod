@@ -1,26 +1,26 @@
--- damagemetersv2/combat.lua - Combat mode transitions, segment snapshots, post-combat refresh
+-- damagemetersY/combat.lua - Combat mode transitions, segment snapshots, post-combat refresh
 local _, addon = ...
-local DM2 = addon.DamageMetersV2
+local DMY = addon.DamageMetersY
 
 --------------------------------------------------------------------------------
 -- Combat Mode Transitions
 --------------------------------------------------------------------------------
 
-function DM2._EnterCombatMode()
-    DM2._inCombat = true
-    DM2._combatStartTime = GetTime()
+function DMY._EnterCombatMode()
+    DMY._inCombat = true
+    DMY._combatStartTime = GetTime()
 
-    for i = 1, DM2.MAX_WINDOWS do
-        local win = DM2._windows[i]
+    for i = 1, DMY.MAX_WINDOWS do
+        local win = DMY._windows[i]
         if win and win.mergedData then
             win._preCombatDuration = win.mergedData.durationSeconds or 0
         end
     end
 end
 
-function DM2._ExitCombatMode()
-    DM2._inCombat = false
-    DM2._combatStartTime = 0
+function DMY._ExitCombatMode()
+    DMY._inCombat = false
+    DMY._combatStartTime = 0
     -- Full refresh happens synchronously from REGEN_ENABLED handler
 end
 
@@ -28,77 +28,77 @@ end
 -- Combat Update — Primary column + live secondary via stored-GUID source queries
 --------------------------------------------------------------------------------
 
-function DM2._UpdateWindowCombat(windowIndex)
-    local win = DM2._windows[windowIndex]
+function DMY._UpdateWindowCombat(windowIndex)
+    local win = DMY._windows[windowIndex]
     if not win or not win.frame:IsShown() then return end
 
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg or not cfg.enabled then return end
 
-    local comp = DM2._comp
+    local comp = DMY._comp
     if not comp then return end
 
     -- Query merged data in combat mode (primary + secondary via stored-GUID bypass)
-    local merged = DM2._QueryMergedData(cfg.sessionType, cfg.sessionID, cfg.columns, true)
+    local merged = DMY._QueryMergedData(cfg.sessionType, cfg.sessionID, cfg.columns, true)
     if not merged then return end
 
     -- Store combat merged data
     win.mergedData = merged
 
     -- Refresh the bar rows display
-    DM2._RefreshBarRows(windowIndex, comp)
+    DMY._RefreshBarRows(windowIndex, comp)
 
     -- Update header timer
-    DM2._UpdateTimerText(windowIndex)
+    DMY._UpdateTimerText(windowIndex)
 end
 
 --------------------------------------------------------------------------------
 -- OOC Full Update — All columns, GUID-correlated
 --------------------------------------------------------------------------------
 
-function DM2._UpdateWindowOOC(windowIndex)
-    local win = DM2._windows[windowIndex]
+function DMY._UpdateWindowOOC(windowIndex)
+    local win = DMY._windows[windowIndex]
     if not win or not win.frame:IsShown() then return end
 
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg or not cfg.enabled then return end
 
-    local comp = DM2._comp
+    local comp = DMY._comp
     if not comp then return end
 
     -- Query merged data OOC (all columns, GUID correlated)
-    local merged = DM2._QueryMergedData(cfg.sessionType, cfg.sessionID, cfg.columns, false)
+    local merged = DMY._QueryMergedData(cfg.sessionType, cfg.sessionID, cfg.columns, false)
     if not merged then
         -- No data — clear display
         win.mergedData = nil
-        DM2._RefreshBarRows(windowIndex, comp)
-        DM2._UpdateTimerText(windowIndex)
+        DMY._RefreshBarRows(windowIndex, comp)
+        DMY._UpdateTimerText(windowIndex)
         return
     end
 
     win.mergedData = merged
 
     -- Refresh display
-    DM2._RefreshBarRows(windowIndex, comp)
-    DM2._UpdateTimerText(windowIndex)
+    DMY._RefreshBarRows(windowIndex, comp)
+    DMY._UpdateTimerText(windowIndex)
 end
 
 --------------------------------------------------------------------------------
 -- Full Refresh All Windows — Called SYNCHRONOUSLY from REGEN_ENABLED
 --------------------------------------------------------------------------------
 
-function DM2._FullRefreshAllWindows()
-    if not DM2._initialized then return end
+function DMY._FullRefreshAllWindows()
+    if not DMY._initialized then return end
 
     -- Ensure column header colors match DB settings
-    local db = DM2._comp and DM2._comp.db
+    local db = DMY._comp and DMY._comp.db
     if db then
         local headerStyle = db.textHeaders or {}
         local useCustom = headerStyle.colorMode == "custom" and headerStyle.color
-        for i = 1, DM2.MAX_WINDOWS do
-            local win = DM2._windows[i]
+        for i = 1, DMY.MAX_WINDOWS do
+            local win = DMY._windows[i]
             if win then
-                for c = 1, DM2.MAX_COLUMNS do
+                for c = 1, DMY.MAX_COLUMNS do
                     local ch = win.columnHeaders[c]
                     if ch then
                         ch:SetAlpha(1)
@@ -114,10 +114,10 @@ function DM2._FullRefreshAllWindows()
         end
     end
 
-    for i = 1, DM2.MAX_WINDOWS do
-        local cfg = DM2._GetWindowConfig(i)
+    for i = 1, DMY.MAX_WINDOWS do
+        local cfg = DMY._GetWindowConfig(i)
         if cfg and cfg.enabled then
-            DM2._UpdateWindowOOC(i)
+            DMY._UpdateWindowOOC(i)
         end
     end
 end
@@ -126,17 +126,17 @@ end
 -- Update All Windows (throttled, called from event handler)
 --------------------------------------------------------------------------------
 
-function DM2._UpdateAllWindows()
-    if not DM2._initialized then return end
+function DMY._UpdateAllWindows()
+    if not DMY._initialized then return end
 
-    local inCombat = DM2._inCombat
-    for i = 1, DM2.MAX_WINDOWS do
-        local cfg = DM2._GetWindowConfig(i)
+    local inCombat = DMY._inCombat
+    for i = 1, DMY.MAX_WINDOWS do
+        local cfg = DMY._GetWindowConfig(i)
         if cfg and cfg.enabled then
             if inCombat then
-                DM2._UpdateWindowCombat(i)
+                DMY._UpdateWindowCombat(i)
             else
-                DM2._UpdateWindowOOC(i)
+                DMY._UpdateWindowOOC(i)
             end
         end
     end
@@ -146,26 +146,26 @@ end
 -- Timer Text
 --------------------------------------------------------------------------------
 
-function DM2._UpdateTimerText(windowIndex)
-    local win = DM2._windows[windowIndex]
+function DMY._UpdateTimerText(windowIndex)
+    local win = DMY._windows[windowIndex]
     if not win then return end
 
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg then return end
 
-    local label = DM2._GetSessionLabel(cfg.sessionType, cfg.sessionID, cfg._sessionName)
+    local label = DMY._GetSessionLabel(cfg.sessionType, cfg.sessionID, cfg._sessionName)
     local duration
 
     if cfg.sessionID then
         -- Specific segment: fixed duration (use cached pre-combat value during combat)
-        if DM2._inCombat then
+        if DMY._inCombat then
             duration = win._preCombatDuration or 0
         else
             duration = win.mergedData and win.mergedData.durationSeconds
         end
-    elseif DM2._inCombat then
+    elseif DMY._inCombat then
         -- Use stopwatch during combat
-        local elapsed = GetTime() - DM2._combatStartTime
+        local elapsed = GetTime() - DMY._combatStartTime
         local preCombat = win._preCombatDuration or 0
         -- For Overall, add pre-combat duration. For Current, just use elapsed.
         if cfg.sessionType == 0 then -- Overall
@@ -179,11 +179,11 @@ function DM2._UpdateTimerText(windowIndex)
     end
 
     -- Compute timer string early (needed for title width calculation)
-    local comp = DM2._comp
+    local comp = DMY._comp
     local db = comp and comp.db
     local timerStr = ""
     if duration and duration > 0 then
-        timerStr = "[" .. DM2._FormatDuration(duration) .. "]"
+        timerStr = "[" .. DMY._FormatDuration(duration) .. "]"
     end
     if win.timerText then
         win.timerText:SetText(timerStr)
@@ -201,7 +201,7 @@ function DM2._UpdateTimerText(windowIndex)
             win.titleText:SetText("")
             win.titleText:SetWidth(0)
         end
-        win.header:SetHeight(DM2.HEADER_HEIGHT)
+        win.header:SetHeight(DMY.HEADER_HEIGHT)
     else
         if win.verticalTitle then win.verticalTitle:Hide() end
         if win.titleText then
@@ -250,15 +250,15 @@ function DM2._UpdateTimerText(windowIndex)
                 -- Expand header height if title wrapped to 2 lines
                 local titleH = win.titleText:GetStringHeight() or 15
                 if titleH > 20 then
-                    win.header:SetHeight(math.max(DM2.HEADER_HEIGHT, titleH + 8))
+                    win.header:SetHeight(math.max(DMY.HEADER_HEIGHT, titleH + 8))
                 else
-                    win.header:SetHeight(DM2.HEADER_HEIGHT)
+                    win.header:SetHeight(DMY.HEADER_HEIGHT)
                 end
             else
                 -- Overall/Current: standard single-line layout
                 win.titleText:SetWidth(0)
                 win.titleText:SetText(label)
-                win.header:SetHeight(DM2.HEADER_HEIGHT)
+                win.header:SetHeight(DMY.HEADER_HEIGHT)
             end
         end
     end
@@ -268,16 +268,16 @@ end
 -- Reset Handler
 --------------------------------------------------------------------------------
 
-function DM2._HandleReset()
-    for i = 1, DM2.MAX_WINDOWS do
-        local win = DM2._windows[i]
+function DMY._HandleReset()
+    for i = 1, DMY.MAX_WINDOWS do
+        local win = DMY._windows[i]
         if win then
             win.mergedData = nil
             win.scrollOffset = 0
             win._preCombatDuration = 0
-            if DM2._comp then
-                DM2._RefreshBarRows(i, DM2._comp)
-                DM2._UpdateTimerText(i)
+            if DMY._comp then
+                DMY._RefreshBarRows(i, DMY._comp)
+                DMY._UpdateTimerText(i)
             end
         end
     end

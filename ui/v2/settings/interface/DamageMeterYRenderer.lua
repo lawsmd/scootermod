@@ -1,13 +1,13 @@
--- DamageMeterV2Renderer.lua - Damage Meter V2 settings renderer
+-- DamageMeterYRenderer.lua - Damage Meters Y settings renderer
 local _, addon = ...
 
 addon.UI = addon.UI or {}
 addon.UI.Settings = addon.UI.Settings or {}
-addon.UI.Settings.DamageMeterV2 = {}
+addon.UI.Settings.DamageMetersY = {}
 
-local DMV2Settings = addon.UI.Settings.DamageMeterV2
+local DMYSettings = addon.UI.Settings.DamageMetersY
 local SettingsBuilder = addon.UI.SettingsBuilder
-local DM2 = addon.DamageMetersV2
+local DMY = addon.DamageMetersY
 
 local selectedWindow = 1
 
@@ -45,13 +45,13 @@ local PREVIEW_THIN_BAR_HEIGHT = 4
 
 local function BuildMetricDropdownValues()
     local values, order = {}, {}
-    if DM2 and DM2.COLUMN_FORMATS then
-        for key, def in pairs(DM2.COLUMN_FORMATS) do
+    if DMY and DMY.COLUMN_FORMATS then
+        for key, def in pairs(DMY.COLUMN_FORMATS) do
             values[key] = def.headerText
             table.insert(order, key)
         end
         table.sort(order, function(a, b)
-            return DM2.COLUMN_FORMATS[a].headerText < DM2.COLUMN_FORMATS[b].headerText
+            return DMY.COLUMN_FORMATS[a].headerText < DMY.COLUMN_FORMATS[b].headerText
         end)
     end
     return values, order
@@ -74,9 +74,9 @@ end
 
 -- Returns formatted display string (handles combo formats like "1.2M (45.3K)")
 local function FormatPlayerValue(player, formatKey)
-    local fmt = DM2 and DM2._FormatCompact
+    local fmt = DMY and DMY._FormatCompact
     if not fmt then return "" end
-    local def = DM2 and DM2.COLUMN_FORMATS and DM2.COLUMN_FORMATS[formatKey]
+    local def = DMY and DMY.COLUMN_FORMATS and DMY.COLUMN_FORMATS[formatKey]
     if not def then return fmt(GetPlayerValue(player, formatKey)) end
 
     if def.primary then
@@ -100,7 +100,7 @@ local function CreatePreviewPane(parentFrame, comp, windowIndex, builder)
     local db = comp and comp.db
     if not db then return nil, 0 end
 
-    local cfg = DM2 and DM2._GetWindowConfig and DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY and DMY._GetWindowConfig and DMY._GetWindowConfig(windowIndex)
     local columns = cfg and cfg.columns or { { format = "dps" } }
     local numColumns = math.min(#columns, 5)
     if cfg and cfg.sessionType ~= 0 then numColumns = 1 end  -- Current/Expired: show only primary
@@ -152,7 +152,7 @@ local function CreatePreviewPane(parentFrame, comp, windowIndex, builder)
             set = function(val)
                 if cfg then cfg.sessionType = val end
                 if builder then builder:DeferredRefreshAll() end
-                if DM2 and DM2._comp then DM2._ApplyStyling(DM2._comp) end
+                if DMY and DMY._comp then DMY._ApplyStyling(DMY._comp) end
             end,
             width = 90, height = 20,
         })
@@ -174,7 +174,7 @@ local function CreatePreviewPane(parentFrame, comp, windowIndex, builder)
             end
             for _, key in ipairs(metricOrder) do
                 -- Exclude amountPerSecond-based formats from secondary columns
-                if c == 1 or not (DM2 and DM2.SECONDARY_EXCLUDED_FORMATS and DM2.SECONDARY_EXCLUDED_FORMATS[key]) then
+                if c == 1 or not (DMY and DMY.SECONDARY_EXCLUDED_FORMATS and DMY.SECONDARY_EXCLUDED_FORMATS[key]) then
                     dropValues[key] = metricValues[key]
                     table.insert(dropOrder, key)
                 end
@@ -196,7 +196,7 @@ local function CreatePreviewPane(parentFrame, comp, windowIndex, builder)
                         colDef.format = val
                     end
                     if builder then builder:DeferredRefreshAll() end
-                    if DM2 and DM2._comp then DM2._ApplyStyling(DM2._comp) end
+                    if DMY and DMY._comp then DMY._ApplyStyling(DMY._comp) end
                 end,
                 width = dropWidth, height = 20,
             })
@@ -446,7 +446,7 @@ local function CreateWindowSelector(parentFrame, builder)
     if Theme and Theme.GetAccentColor then ar, ag, ab = Theme:GetAccentColor() end
 
     -- [1]-[5] buttons
-    for i = 1, (DM2 and DM2.MAX_WINDOWS or 5) do
+    for i = 1, (DMY and DMY.MAX_WINDOWS or 5) do
         local btn = CreateFrame("Button", nil, row)
         btn:SetSize(28, 22)
         btn:SetPoint("LEFT", row, "LEFT", (i - 1) * 32 + 4, 0)
@@ -476,11 +476,11 @@ local function CreateWindowSelector(parentFrame, builder)
     end
 
     -- ON/OFF indicator
-    local cfg = DM2 and DM2._GetWindowConfig and DM2._GetWindowConfig(selectedWindow)
+    local cfg = DMY and DMY._GetWindowConfig and DMY._GetWindowConfig(selectedWindow)
     local indicator = CreateOnOffIndicator(row, cfg and cfg.enabled, function()
         if cfg then
             cfg.enabled = not cfg.enabled
-            if DM2._comp then DM2._ApplyStyling(DM2._comp) end
+            if DMY._comp then DMY._ApplyStyling(DMY._comp) end
             if builder then builder:DeferredRefreshAll() end
         end
     end)
@@ -489,7 +489,7 @@ local function CreateWindowSelector(parentFrame, builder)
     -- Copy From dropdown
     if Controls and Controls.CreateDropdown then
         local copyValues, copyOrder = {}, {}
-        for i = 1, (DM2 and DM2.MAX_WINDOWS or 5) do
+        for i = 1, (DMY and DMY.MAX_WINDOWS or 5) do
             if i ~= selectedWindow then
                 copyValues[i] = "Window " .. i
                 table.insert(copyOrder, i)
@@ -506,11 +506,11 @@ local function CreateWindowSelector(parentFrame, builder)
             fontSize = 10,
             set = function(sourceIdx)
                 if addon.Dialogs and addon.Dialogs.Show then
-                    addon.Dialogs:Show("SCOOT_COPY_DMV2_CONFIRM", {
+                    addon.Dialogs:Show("SCOOT_COPY_DMY_CONFIRM", {
                         formatArgs = { tostring(sourceIdx), tostring(selectedWindow) },
                         onAccept = function()
-                            if DM2 and DM2.CopyWindowSettings then
-                                DM2.CopyWindowSettings(sourceIdx, selectedWindow)
+                            if DMY and DMY.CopyWindowSettings then
+                                DMY.CopyWindowSettings(sourceIdx, selectedWindow)
                             end
                             if builder then builder:DeferredRefreshAll() end
                         end,
@@ -532,7 +532,7 @@ local function CreateWindowSelector(parentFrame, builder)
                 if cfg and cfg.columns then
                     table.insert(cfg.columns, { format = "damage" })
                     if builder then builder:DeferredRefreshAll() end
-                    if DM2 and DM2._comp then DM2._ApplyStyling(DM2._comp) end
+                    if DMY and DMY._comp then DMY._ApplyStyling(DMY._comp) end
                 end
             end,
         })
@@ -549,18 +549,18 @@ end
 -- Main Renderer
 --------------------------------------------------------------------------------
 
-function DMV2Settings.Render(panel, scrollContent)
+function DMYSettings.Render(panel, scrollContent)
     panel:ClearContent()
     local builder = SettingsBuilder:CreateFor(scrollContent)
     panel._currentBuilder = builder
-    builder:SetOnRefresh(function() DMV2Settings.Render(panel, scrollContent) end)
+    builder:SetOnRefresh(function() DMYSettings.Render(panel, scrollContent) end)
 
     local Helpers = addon.UI.Settings.Helpers
     local h = Helpers.CreateComponentHelpers("damageMeterV2")
     local getSetting, setSetting = h.get, h.setAndApply
     local function setAndRefresh(k, v) setSetting(k, v); builder:DeferredRefreshAll() end
 
-    local comp = DM2 and DM2._comp
+    local comp = DMY and DMY._comp
 
     -- Window Selector
     local ws = CreateWindowSelector(scrollContent, builder)
@@ -584,13 +584,13 @@ function DMV2Settings.Render(panel, scrollContent)
 
     -- Sizing (per-window) — first because it's per-window and most relevant to selected window
     local function getWinSizing(key, default)
-        local winCfg = DM2 and DM2._GetWindowConfig and DM2._GetWindowConfig(selectedWindow)
+        local winCfg = DMY and DMY._GetWindowConfig and DMY._GetWindowConfig(selectedWindow)
         return winCfg and winCfg[key] or default
     end
     local function setWinSizing(key, value)
-        local winCfg = DM2 and DM2._GetWindowConfig and DM2._GetWindowConfig(selectedWindow)
+        local winCfg = DMY and DMY._GetWindowConfig and DMY._GetWindowConfig(selectedWindow)
         if winCfg then winCfg[key] = value end
-        if DM2 and DM2._comp then DM2._ApplyStyling(DM2._comp) end
+        if DMY and DMY._comp then DMY._ApplyStyling(DMY._comp) end
         builder:DeferredRefreshAll()
     end
 
@@ -901,5 +901,5 @@ function DMV2Settings.Render(panel, scrollContent)
 end
 
 addon.UI.SettingsPanel:RegisterRenderer("damageMeterV2", function(panel, scrollContent)
-    DMV2Settings.Render(panel, scrollContent)
+    DMYSettings.Render(panel, scrollContent)
 end)

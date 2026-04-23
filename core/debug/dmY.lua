@@ -1,10 +1,10 @@
 local addonName, addon = ...
 
 --------------------------------------------------------------------------------
--- /scoot debug dmv2 cvar — Test 1: CVar data collection
+-- /scoot debug dmY cvar — Test 1: CVar data collection
 --------------------------------------------------------------------------------
 
-function addon.DebugDMV2CVar()
+function addon.DebugDMYCVar()
     if InCombatLockdown() then
         addon:Print("Cannot toggle CVar during combat.")
         return
@@ -20,15 +20,15 @@ function addon.DebugDMV2CVar()
     -- First run: CVar is "1" → set to "0" and instruct user
     if current ~= "0" then
         C_CVar.SetCVar("damageMeterEnabled", "0")
-        addon:Print("DMV2 CVar Test: Set damageMeterEnabled = 0")
+        addon:Print("DMY CVar Test: Set damageMeterEnabled = 0")
         addon:Print("  Blizzard meter is now hidden.")
         addon:Print("  1) Enter combat (dungeon trash or target dummy)")
-        addon:Print("  2) After combat ends, run: /scoot debug dmv2 cvar")
+        addon:Print("  2) After combat ends, run: /scoot debug dmY cvar")
         return
     end
 
     -- Second run: CVar is "0" → check data, restore, report
-    local lines = { "== DMV2 CVar Test ==" }
+    local lines = { "== DMY CVar Test ==" }
     table.insert(lines, "CVar was: 0 (Blizzard meter disabled)")
 
     C_CVar.SetCVar("damageMeterEnabled", "1")
@@ -72,11 +72,11 @@ function addon.DebugDMV2CVar()
         table.insert(lines, "  off-screen positioning or scale trick.")
     end
 
-    addon.DebugShowWindow("DMV2 CVar Test", table.concat(lines, "\n"))
+    addon.DebugShowWindow("DMY CVar Test", table.concat(lines, "\n"))
 end
 
 --------------------------------------------------------------------------------
--- /scoot debug dmv2 api — Tests 2-4: sourceGUID secrecy, SetText, SetValue
+-- /scoot debug dmY api — Tests 2-4: sourceGUID secrecy, SetText, SetValue
 --------------------------------------------------------------------------------
 
 -- Reusable hidden test frame (created once, reused across calls)
@@ -122,7 +122,7 @@ local function FormatSafeValue(value, isSecret)
 end
 
 local function RunAPITests()
-    local lines = { "== DMV2 API Secrecy Test ==" }
+    local lines = { "== DMY API Secrecy Test ==" }
     local inCombat = InCombatLockdown()
 
     if inCombat then
@@ -325,26 +325,26 @@ local function RunAPITests()
     return lines
 end
 
-function addon.DebugDMV2API()
+function addon.DebugDMYAPI()
     local lines = RunAPITests()
     local output = table.concat(lines, "\n")
 
     if InCombatLockdown() then
-        addon:Print("DMV2 API test collected. Results will show after combat ends.")
+        addon:Print("DMY API test collected. Results will show after combat ends.")
         -- Defer showing the window to avoid taint from UI creation during combat
         local waitFrame = CreateFrame("Frame")
         waitFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
         waitFrame:SetScript("OnEvent", function(self)
             self:UnregisterAllEvents()
-            addon.DebugShowWindow("DMV2 API Secrecy Test", output)
+            addon.DebugShowWindow("DMY API Secrecy Test", output)
         end)
     else
-        addon.DebugShowWindow("DMV2 API Secrecy Test", output)
+        addon.DebugShowWindow("DMY API Secrecy Test", output)
     end
 end
 
 --------------------------------------------------------------------------------
--- /scoot debug dmv2 fields — Exhaustive mid-combat field dump
+-- /scoot debug dmY fields — Exhaustive mid-combat field dump
 -- Purpose: find any non-secret identifier that could correlate players across
 -- meter types during combat (solving the rank-drift problem).
 --------------------------------------------------------------------------------
@@ -384,7 +384,7 @@ local function SafeDisplay(value, isSecret)
 end
 
 local function RunFieldsDump()
-    local lines = { "== DMV2 Exhaustive Field Dump ==" }
+    local lines = { "== DMY Exhaustive Field Dump ==" }
     local inCombat = InCombatLockdown()
 
     if inCombat then
@@ -722,25 +722,25 @@ local function RunFieldsDump()
     return lines
 end
 
-function addon.DebugDMV2Fields()
+function addon.DebugDMYFields()
     local lines = RunFieldsDump()
     local output = table.concat(lines, "\n")
 
     if InCombatLockdown() then
-        addon:Print("DMV2 field dump collected. Results will show after combat ends.")
+        addon:Print("DMY field dump collected. Results will show after combat ends.")
         local waitFrame = CreateFrame("Frame")
         waitFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
         waitFrame:SetScript("OnEvent", function(self)
             self:UnregisterAllEvents()
-            addon.DebugShowWindow("DMV2 Field Dump", output)
+            addon.DebugShowWindow("DMY Field Dump", output)
         end)
     else
-        addon.DebugShowWindow("DMV2 Field Dump", output)
+        addon.DebugShowWindow("DMY Field Dump", output)
     end
 end
 
 --------------------------------------------------------------------------------
--- /scoot debug dmv2 drilldown — In-combat drill-down feasibility test
+-- /scoot debug dmY drilldown — In-combat drill-down feasibility test
 -- Purpose: determine whether GetCombatSessionSourceFromType can be called from
 -- addon code during combat using a pre-stored (non-secret) sourceGUID.
 --
@@ -754,7 +754,7 @@ local _storedTestName = nil
 local _storedTestClass = nil
 
 local function RunDrilldownTest()
-    local lines = { "== DMV2 Drill-Down Feasibility Test ==" }
+    local lines = { "== DMY Drill-Down Feasibility Test ==" }
     local inCombat = InCombatLockdown()
 
     table.insert(lines, string.format("InCombatLockdown(): %s", tostring(inCombat)))
@@ -860,7 +860,7 @@ local function RunDrilldownTest()
         table.insert(lines, "")
         table.insert(lines, "Phase 1 COMPLETE. GUID stored as plain Lua string.")
         table.insert(lines, "  1) Enter combat")
-        table.insert(lines, "  2) Re-run: /scoot debug dmv2 drilldown")
+        table.insert(lines, "  2) Re-run: /scoot debug dmY drilldown")
         table.insert(lines, "  The stored GUID will be tested against the source API during combat.")
 
         return lines
@@ -1151,25 +1151,25 @@ local function RunDrilldownTest()
     return lines
 end
 
-function addon.DebugDMV2Drilldown()
+function addon.DebugDMYDrilldown()
     local lines = RunDrilldownTest()
     local output = table.concat(lines, "\n")
 
     if InCombatLockdown() then
-        addon:Print("DMV2 drill-down test collected. Results will show after combat ends.")
+        addon:Print("DMY drill-down test collected. Results will show after combat ends.")
         local waitFrame = CreateFrame("Frame")
         waitFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
         waitFrame:SetScript("OnEvent", function(self)
             self:UnregisterAllEvents()
-            addon.DebugShowWindow("DMV2 Drill-Down Feasibility Test", output)
+            addon.DebugShowWindow("DMY Drill-Down Feasibility Test", output)
         end)
     else
-        addon.DebugShowWindow("DMV2 Drill-Down Feasibility Test", output)
+        addon.DebugShowWindow("DMY Drill-Down Feasibility Test", output)
     end
 end
 
 --------------------------------------------------------------------------------
--- /scoot debug dmv2 multicol — Multi-column live combat feasibility test
+-- /scoot debug dmY multicol — Multi-column live combat feasibility test
 -- Purpose: determine if the source-level API can provide live secondary column
 -- data during combat using stored GUIDs, eliminating the gray-out.
 --
@@ -1184,7 +1184,7 @@ end
 local _multicolCache = nil  -- { [guid] = { name, classFilename, sessionValues = { [meterType] = { totalAmount, amountPerSecond } } } }
 
 local function RunMulticolTest()
-    local lines = { "== DMV2 Multi-Column Live Combat Test ==" }
+    local lines = { "== DMY Multi-Column Live Combat Test ==" }
     local inCombat = InCombatLockdown()
 
     table.insert(lines, string.format("InCombatLockdown(): %s", tostring(inCombat)))
@@ -1308,7 +1308,7 @@ local function RunMulticolTest()
 
         table.insert(lines, "Phase 1 COMPLETE. GUIDs cached.")
         table.insert(lines, "  1) Enter combat")
-        table.insert(lines, "  2) Re-run: /scoot debug dmv2 multicol")
+        table.insert(lines, "  2) Re-run: /scoot debug dmY multicol")
 
         return lines
     end
@@ -1416,19 +1416,19 @@ local function RunMulticolTest()
     return lines
 end
 
-function addon.DebugDMV2Multicol()
+function addon.DebugDMYMulticol()
     local lines = RunMulticolTest()
     local output = table.concat(lines, "\n")
 
     if InCombatLockdown() then
-        addon:Print("DMV2 multi-column test collected. Results will show after combat ends.")
+        addon:Print("DMY multi-column test collected. Results will show after combat ends.")
         local waitFrame = CreateFrame("Frame")
         waitFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
         waitFrame:SetScript("OnEvent", function(self)
             self:UnregisterAllEvents()
-            addon.DebugShowWindow("DMV2 Multi-Column Live Combat Test", output)
+            addon.DebugShowWindow("DMY Multi-Column Live Combat Test", output)
         end)
     else
-        addon.DebugShowWindow("DMV2 Multi-Column Live Combat Test", output)
+        addon.DebugShowWindow("DMY Multi-Column Live Combat Test", output)
     end
 end

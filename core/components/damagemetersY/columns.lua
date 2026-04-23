@@ -1,6 +1,6 @@
--- damagemetersv2/columns.lua - Column format definitions and meter type mappings
+-- damagemetersY/columns.lua - Column format definitions and meter type mappings
 local _, addon = ...
-local DM2 = addon.DamageMetersV2
+local DMY = addon.DamageMetersY
 
 --------------------------------------------------------------------------------
 -- Column Format Definitions
@@ -9,7 +9,7 @@ local DM2 = addon.DamageMetersV2
 -- Each format maps to one or two Enum.DamageMeterType values and display metadata.
 -- For combo formats, 'primary' is the main value and 'secondary' is in parentheses.
 
-DM2.COLUMN_FORMATS = {
+DMY.COLUMN_FORMATS = {
     -- Damage
     damage   = { meterType = 0,  valueField = "totalAmount",     headerText = "Damage" },
     dps      = { meterType = 1,  valueField = "amountPerSecond",  headerText = "DPS" },
@@ -31,27 +31,28 @@ DM2.COLUMN_FORMATS = {
     deaths    = { meterType = 9,  valueField = "totalAmount",  headerText = "Deaths",  isDeaths = true },
     enemyDmg  = { meterType = 10, valueField = "totalAmount",  headerText = "Enemy Dmg" },
 }
+table.freeze(DMY.COLUMN_FORMATS)
 
 --------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
 
 --- Returns the primary Enum.DamageMeterType for a window's first column.
-function DM2._GetPrimaryMeterType(windowConfig)
+function DMY._GetPrimaryMeterType(windowConfig)
     if not windowConfig or not windowConfig.columns or #windowConfig.columns == 0 then
         return 1 -- DPS fallback
     end
     local fmt = windowConfig.columns[1].format
-    local def = DM2.COLUMN_FORMATS[fmt]
+    local def = DMY.COLUMN_FORMATS[fmt]
     if not def then return 1 end
     return def.primary or def.meterType
 end
 
 --- Returns a set of all unique Enum.DamageMeterType values needed for a window's columns.
-function DM2._GetNeededMeterTypes(columns)
+function DMY._GetNeededMeterTypes(columns)
     local needed = {}
     for _, col in ipairs(columns) do
-        local def = DM2.COLUMN_FORMATS[col.format]
+        local def = DMY.COLUMN_FORMATS[col.format]
         if def then
             if def.primary then
                 needed[def.primary] = true
@@ -65,14 +66,14 @@ function DM2._GetNeededMeterTypes(columns)
 end
 
 --- Returns the header text for a column format key.
-function DM2._GetColumnHeader(formatKey)
-    local def = DM2.COLUMN_FORMATS[formatKey]
+function DMY._GetColumnHeader(formatKey)
+    local def = DMY.COLUMN_FORMATS[formatKey]
     return def and def.headerText or "?"
 end
 
 --- Formats excluded from secondary (non-primary) columns.
 --- These use amountPerSecond which the source-level API cannot provide during combat.
-DM2.SECONDARY_EXCLUDED_FORMATS = {
+DMY.SECONDARY_EXCLUDED_FORMATS = {
     dps      = true,
     hps      = true,
     dps_dmg  = true,
@@ -80,9 +81,10 @@ DM2.SECONDARY_EXCLUDED_FORMATS = {
     dmg_dps  = true,
     heal_hps = true,
 }
+table.freeze(DMY.SECONDARY_EXCLUDED_FORMATS)
 
 --- Migration map: excluded format → totalAmount equivalent for auto-migration.
-DM2.SECONDARY_MIGRATION_MAP = {
+DMY.SECONDARY_MIGRATION_MAP = {
     dps      = "damage",
     hps      = "healing",
     dps_dmg  = "damage",
@@ -90,3 +92,4 @@ DM2.SECONDARY_MIGRATION_MAP = {
     dmg_dps  = "damage",
     heal_hps = "healing",
 }
+table.freeze(DMY.SECONDARY_MIGRATION_MAP)

@@ -1,18 +1,18 @@
--- damagemetersv2/export.lua - Export pipeline: column types, data gathering, chat output
+-- damagemetersY/export.lua - Export pipeline: column types, data gathering, chat output
 local _, addon = ...
-local DM2 = addon.DamageMetersV2
+local DMY = addon.DamageMetersY
 
 --------------------------------------------------------------------------------
--- V2 Export Pipeline
+-- Damage Meters Y Export Pipeline
 --------------------------------------------------------------------------------
 
 --- Build a meter type array from a window's column config for columnsOverride.
-function DM2._GetColumnMeterTypes(windowConfig)
+function DMY._GetColumnMeterTypes(windowConfig)
     if not windowConfig or not windowConfig.columns then return nil end
     local types = {}
     local seen = {}
     for _, col in ipairs(windowConfig.columns) do
-        local def = DM2.COLUMN_FORMATS[col.format]
+        local def = DMY.COLUMN_FORMATS[col.format]
         if def then
             local mt = def.primary or def.meterType
             if not seen[mt] then
@@ -29,17 +29,17 @@ function DM2._GetColumnMeterTypes(windowConfig)
 end
 
 --- Export window data to the High Score arcade display.
-function DM2._ExportToWindow(windowIndex)
+function DMY._ExportToWindow(windowIndex)
     if InCombatLockdown() then
         if addon.Print then addon:Print("Export not available during combat.") end
         return
     end
 
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg then return end
 
     local sessionType = cfg.sessionType or (not cfg.sessionID and 0) or nil
-    local primaryMeterType = DM2._GetPrimaryMeterType(cfg)
+    local primaryMeterType = DMY._GetPrimaryMeterType(cfg)
 
     local data, err = addon.GatherDamageMeterExportData(sessionType, primaryMeterType, cfg.sessionID)
     if not data then
@@ -57,19 +57,19 @@ function DM2._ExportToWindow(windowIndex)
 end
 
 --- Export window data to chat.
-function DM2._ExportToChat(windowIndex)
+function DMY._ExportToChat(windowIndex)
     if InCombatLockdown() then
         if addon.Print then addon:Print("Export not available during combat.") end
         return
     end
 
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg then return end
-    local comp = DM2._comp
+    local comp = DMY._comp
     if not comp then return end
 
     local sessionType = cfg.sessionType or (not cfg.sessionID and 0) or nil
-    local primaryMeterType = DM2._GetPrimaryMeterType(cfg)
+    local primaryMeterType = DMY._GetPrimaryMeterType(cfg)
     local channel = comp.db.exportChatChannel or "PARTY"
     local lineCount = comp.db.exportChatLineCount or 5
 
@@ -106,17 +106,17 @@ function DM2._ExportToChat(windowIndex)
 end
 
 --- Export to a specific chat channel with specified line count.
-function DM2._ExportToChatChannel(windowIndex, channel, lineCount)
+function DMY._ExportToChatChannel(windowIndex, channel, lineCount)
     if InCombatLockdown() then
         if addon.Print then addon:Print("Export not available during combat.") end
         return
     end
 
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg then return end
 
     local sessionType = cfg.sessionType or (not cfg.sessionID and 0) or nil
-    local primaryMeterType = DM2._GetPrimaryMeterType(cfg)
+    local primaryMeterType = DMY._GetPrimaryMeterType(cfg)
     lineCount = lineCount or 5
 
     local data, err = addon.GatherDamageMeterExportData(sessionType, primaryMeterType, cfg.sessionID)

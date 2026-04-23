@@ -1,12 +1,12 @@
--- damagemetersv2/styling.lua - Visual styling, JiberishIcons integration, bar appearance
+-- damagemetersY/styling.lua - Visual styling, JiberishIcons integration, bar appearance
 local _, addon = ...
-local DM2 = addon.DamageMetersV2
+local DMY = addon.DamageMetersY
 
 -- Slash command visibility override (non-persistent, resets on reload)
-DM2._slashHidden = false
+DMY._slashHidden = false
 
 --------------------------------------------------------------------------------
--- JiberishIcons helpers (reuse V1's addon-level exports)
+-- JiberishIcons helpers (reuse X's addon-level exports)
 --------------------------------------------------------------------------------
 
 local function GetJiberishIcons()
@@ -224,7 +224,7 @@ local function HideHollowOutline(row)
     row._hollowOutline.frame:Hide()
 end
 
-function DM2._ApplyBarBorder(row, player, db)
+function DMY._ApplyBarBorder(row, player, db)
     if not row or not row.bar then return end
     local styleKey = db.barBorderStyle or "none"
 
@@ -274,7 +274,7 @@ end
 -- Get bar color for a player
 --------------------------------------------------------------------------------
 
-function DM2._GetBarColor(player, db)
+function DMY._GetBarColor(player, db)
     if db.barForegroundColorMode == "custom" then
         local c = db.barCustomColor or { 0.8, 0.7, 0.2, 1 }
         return c[1] or 0.8, c[2] or 0.7, c[3] or 0.2
@@ -291,8 +291,8 @@ end
 -- Full styling pass for a window
 --------------------------------------------------------------------------------
 
-function DM2._ApplyFullStyling(windowIndex, comp)
-    local win = DM2._windows[windowIndex]
+function DMY._ApplyFullStyling(windowIndex, comp)
+    local win = DMY._windows[windowIndex]
     if not win then return end
     local db = comp.db
 
@@ -305,7 +305,7 @@ function DM2._ApplyFullStyling(windowIndex, comp)
     end
 
     -- Frame size and scale (per-window, falls back to shared)
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     local fw = tonumber(cfg and cfg.frameWidth or db.frameWidth) or 350
     local fh = tonumber(cfg and cfg.frameHeight or db.frameHeight) or 250
     win.frame:SetSize(fw, fh)
@@ -329,7 +329,7 @@ function DM2._ApplyFullStyling(windowIndex, comp)
         ApplyTextStyle(win.verticalTitle, db.textTitle)
         if db.verticalTitleMode then
             win.verticalTitle:ClearAllPoints()
-            win.verticalTitle:SetPoint("TOPRIGHT", win.frame, "TOPLEFT", -4, -(DM2.HEADER_HEIGHT or 24) - 4)
+            win.verticalTitle:SetPoint("TOPRIGHT", win.frame, "TOPLEFT", -4, -(DMY.HEADER_HEIGHT or 24) - 4)
             win.verticalTitle:SetJustifyH("CENTER")
             -- No scroll area shift — content stays in place
         else
@@ -347,7 +347,7 @@ function DM2._ApplyFullStyling(windowIndex, comp)
     end
 
     -- Column header styling
-    for c = 1, DM2.MAX_COLUMNS do
+    for c = 1, DMY.MAX_COLUMNS do
         ApplyTextStyle(win.columnHeaders[c], db.textHeaders)
     end
 
@@ -355,7 +355,7 @@ function DM2._ApplyFullStyling(windowIndex, comp)
     local barTexPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(db.barTexture or "default") or nil
     local barMode = db.barMode or "default"
     local fillAlpha = (barMode == "hollow") and 0 or 1
-    for r = 1, DM2.MAX_POOL do
+    for r = 1, DMY.MAX_POOL do
         local row = win.barRows[r]
         ApplyTextStyle(row.nameText, db.textNames)
         -- Single full-width bar texture
@@ -366,7 +366,7 @@ function DM2._ApplyFullStyling(windowIndex, comp)
         local barTex = row.bar and row.bar:GetStatusBarTexture()
         if barTex then barTex:SetAlpha(fillAlpha) end
         -- Value texts
-        for c = 1, DM2.MAX_COLUMNS do
+        for c = 1, DMY.MAX_COLUMNS do
             local vt = row.valueTexts and row.valueTexts[c]
             if vt then ApplyTextStyle(vt, db.textValues) end
         end
@@ -380,29 +380,29 @@ function DM2._ApplyFullStyling(windowIndex, comp)
     end
     local pinnedBarTex = pinnedRow.bar and pinnedRow.bar:GetStatusBarTexture()
     if pinnedBarTex then pinnedBarTex:SetAlpha(fillAlpha) end
-    for c = 1, DM2.MAX_COLUMNS do
+    for c = 1, DMY.MAX_COLUMNS do
         local vt = pinnedRow.valueTexts and pinnedRow.valueTexts[c]
         if vt then ApplyTextStyle(vt, db.textValues) end
     end
 
     -- Recalculate layout and refresh rows (applies borders + bar visibility)
-    DM2._CalculateColumnWidths(windowIndex, comp)
-    DM2._LayoutBarRows(windowIndex, comp)
-    DM2._RefreshBarRows(windowIndex, comp)
+    DMY._CalculateColumnWidths(windowIndex, comp)
+    DMY._LayoutBarRows(windowIndex, comp)
+    DMY._RefreshBarRows(windowIndex, comp)
 end
 
 --------------------------------------------------------------------------------
 -- Apply icon + color to a populated bar row (called during refresh)
 --------------------------------------------------------------------------------
 
-function DM2._StyleBarRow(row, player, db)
+function DMY._StyleBarRow(row, player, db)
     ApplyIcon(row, player, db)
-    DM2._ApplyBarBorder(row, player, db)
+    DMY._ApplyBarBorder(row, player, db)
 
     -- Hollow outline: show when hollow mode active and bars visible
     local barMode = db.barMode or "default"
     if barMode == "hollow" and db.showBars ~= false then
-        local cr, cg, cb = DM2._GetBarColor(player, db)
+        local cr, cg, cb = DMY._GetBarColor(player, db)
         ShowHollowOutline(row, cr, cg, cb)
     else
         HideHollowOutline(row)
@@ -413,17 +413,17 @@ end
 -- Visibility management
 --------------------------------------------------------------------------------
 
-function DM2._UpdateVisibility(windowIndex, comp)
-    local win = DM2._windows[windowIndex]
+function DMY._UpdateVisibility(windowIndex, comp)
+    local win = DMY._windows[windowIndex]
     if not win then return end
 
     -- Slash command override: hide all windows
-    if DM2._slashHidden then
+    if DMY._slashHidden then
         win.frame:Hide()
         return
     end
 
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg or not cfg.enabled then
         win.frame:Hide()
         return
@@ -449,28 +449,28 @@ end
 -- Slash command handlers (/dmshow, /dmreset)
 --------------------------------------------------------------------------------
 
-function DM2._SlashToggleShow()
-    DM2._slashHidden = not DM2._slashHidden
-    local comp = DM2._comp or (addon.Components and addon.Components["damageMeterV2"])
+function DMY._SlashToggleShow()
+    DMY._slashHidden = not DMY._slashHidden
+    local comp = DMY._comp or (addon.Components and addon.Components["damageMeterV2"])
     if comp then
-        for i = 1, DM2.MAX_WINDOWS do
-            DM2._UpdateVisibility(i, comp)
+        for i = 1, DMY.MAX_WINDOWS do
+            DMY._UpdateVisibility(i, comp)
         end
-        if not DM2._slashHidden then
-            DM2._RefreshOpacity(comp)
-            if not DM2._inCombat then
-                DM2._FullRefreshAllWindows()
+        if not DMY._slashHidden then
+            DMY._RefreshOpacity(comp)
+            if not DMY._inCombat then
+                DMY._FullRefreshAllWindows()
             end
         end
     end
-    addon:Print(DM2._slashHidden and "Damage Meter hidden." or "Damage Meter shown.")
+    addon:Print(DMY._slashHidden and "Damage Meter hidden." or "Damage Meter shown.")
 end
 
-function DM2._SlashReset()
+function DMY._SlashReset()
     if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
         C_DamageMeter.ResetAllCombatSessions()
     end
-    DM2._HandleReset()
+    DMY._HandleReset()
     addon:Print("Damage Meter data reset.")
 end
 
@@ -478,10 +478,10 @@ end
 -- Session header text
 --------------------------------------------------------------------------------
 
-function DM2._UpdateSessionHeader(windowIndex, comp)
-    local win = DM2._windows[windowIndex]
+function DMY._UpdateSessionHeader(windowIndex, comp)
+    local win = DMY._windows[windowIndex]
     if not win then return end
-    local cfg = DM2._GetWindowConfig(windowIndex)
+    local cfg = DMY._GetWindowConfig(windowIndex)
     if not cfg then return end
     local db = comp.db
 
@@ -489,7 +489,7 @@ function DM2._UpdateSessionHeader(windowIndex, comp)
     if db.titleMode == "custom" and db.customTitle and db.customTitle ~= "" then
         label = db.customTitle
     else
-        label = DM2._GetSessionLabel(cfg.sessionType, cfg.sessionID, cfg._sessionName)
+        label = DMY._GetSessionLabel(cfg.sessionType, cfg.sessionID, cfg._sessionName)
     end
 
     -- Timer is handled separately by _UpdateTimerText

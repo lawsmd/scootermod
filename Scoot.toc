@@ -136,21 +136,22 @@ core/components/tooltip.lua
 core/components/notes.lua
 core/qol.lua
 core/components/objectivetracker.lua
-core/components/damagemeters/core.lua
-core/components/damagemeters/overlays.lua
-core/components/damagemeters/styling.lua
-core/components/damagemeters/export.lua
-## Damage Meter V2
-core/components/damagemetersv2/core.lua
-core/components/damagemetersv2/columns.lua
-core/components/damagemetersv2/data.lua
-core/components/damagemetersv2/combat.lua
-core/components/damagemetersv2/frames.lua
-core/components/damagemetersv2/layout.lua
-core/components/damagemetersv2/styling.lua
-core/components/damagemetersv2/editmode.lua
-core/components/damagemetersv2/export.lua
-core/components/damagemetersv2/events.lua
+## Damage Meters X (Native — reskins Blizzard's built-in meter)
+core/components/damagemetersX/core.lua
+core/components/damagemetersX/overlays.lua
+core/components/damagemetersX/styling.lua
+core/components/damagemetersX/export.lua
+## Damage Meters Y (Modern — custom Scoot-owned frames)
+core/components/damagemetersY/core.lua
+core/components/damagemetersY/columns.lua
+core/components/damagemetersY/data.lua
+core/components/damagemetersY/combat.lua
+core/components/damagemetersY/frames.lua
+core/components/damagemetersY/layout.lua
+core/components/damagemetersY/styling.lua
+core/components/damagemetersY/editmode.lua
+core/components/damagemetersY/export.lua
+core/components/damagemetersY/events.lua
 core/components/bosswarnings/core.lua
 core/debug/core.lua
 core/debug/editmode.lua
@@ -160,7 +161,7 @@ core/debug/export.lua
 core/debug/inspector.lua
 core/debug/misc.lua
 core/debug/cdmlayers.lua
-core/debug/dmv2.lua
+core/debug/dmY.lua
 core/taintdebug.lua
 core/dialogs.lua
 core/importexport.lua
@@ -174,6 +175,7 @@ ui/v2/controls/Selector.lua
 ui/v2/controls/Slider.lua
 ui/v2/controls/DualSlider.lua
 ui/v2/controls/DualSelector.lua
+ui/v2/controls/RankSelector.lua
 ui/v2/controls/SelectorToggleRow.lua
 ui/v2/controls/Tabbed.lua
 ui/v2/controls/FontSelector.lua
@@ -222,8 +224,8 @@ ui/v2/settings/interface/MiscRenderer.lua
 ui/v2/settings/interface/SctDamageRenderer.lua
 ui/v2/settings/interface/TooltipRenderer.lua
 ui/v2/settings/interface/NotesRenderer.lua
-ui/v2/settings/interface/DamageMeterRenderer.lua
-ui/v2/settings/interface/DamageMeterV2Renderer.lua
+ui/v2/settings/interface/DamageMeterXRenderer.lua
+ui/v2/settings/interface/DamageMeterYRenderer.lua
 ui/v2/settings/interface/ObjectiveTrackerRenderer.lua
 ui/v2/settings/bosswarnings/BossWarningsRenderer.lua
 ui/v2/settings/bosswarnings/BossTimelineRenderer.lua
