@@ -129,21 +129,27 @@ local function scheduleComponentApply(component)
 end
 
 local function onPRDEvent(self, event, ...)
-    -- Defer all styling to next frame to ensure execution is outside any callback chain
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0, function()
-            for component, _ in pairs(prdRegisteredComponents) do
-                if component and component.ApplyStyling then
-                    -- Zero-Touch: skip unconfigured components (still on proxy DB)
-                    if not (component._ScootDBProxy and component.db == component._ScootDBProxy) then
-                        component:ApplyStyling()
-                    end
+    if not (C_Timer and C_Timer.After) then return end
+    local function doApply()
+        for component, _ in pairs(prdRegisteredComponents) do
+            if component and component.ApplyStyling then
+                -- Zero-Touch: skip unconfigured components (still on proxy DB)
+                if not (component._ScootDBProxy and component.db == component._ScootDBProxy) then
+                    component:ApplyStyling()
                 end
             end
-            -- Always update opacity after styling (handles initial load and state changes)
-            -- Late-bound: opacity.lua sets PRD._updateAllPRDOpacities before runtime calls
-            PRD._updateAllPRDOpacities()
-        end)
+        end
+        -- Always update opacity after styling (handles initial load and state changes)
+        -- Late-bound: opacity.lua sets PRD._updateAllPRDOpacities before runtime calls
+        PRD._updateAllPRDOpacities()
+    end
+    -- Defer to next frame to ensure execution is outside any callback chain
+    C_Timer.After(0, doApply)
+    -- UPDATE_SHAPESHIFT_FORM fires before UnitPowerType("player") transitions, so
+    -- classPower color can resolve to the old power type on the first pass. Run
+    -- a second pass once the power type has settled to correct the stuck color.
+    if event == "UPDATE_SHAPESHIFT_FORM" then
+        C_Timer.After(0.2, doApply)
     end
 end
 
