@@ -74,7 +74,9 @@ local function RefreshSpellCooldown(icon)
             icon.CountText:Show()
 
             if chargeInfo.isActive then
-                -- Charges recharging — show cooldown swipe via DurationObject (taint-free)
+                -- Charges recharging — show cooldown swipe via DurationObject (taint-free).
+                -- 12.0.5's zero-span-at-max-charges case is handled by the isActive=false
+                -- branch below (Cooldown:Clear), so no extra guard is needed here.
                 local chargeDurObj = C_Spell.GetSpellChargeDuration(spellID)
                 if chargeDurObj then
                     icon.Cooldown:SetCooldownFromDurationObject(chargeDurObj)
