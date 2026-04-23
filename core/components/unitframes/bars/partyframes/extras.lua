@@ -88,16 +88,24 @@ local function getPartyHealthBarForUnit(unit)
 
     local useDark = (colorMode == "valueDark")
 
-    -- Party frames are dynamically assigned - check each frame's unit property
+    -- Resolve the event unit's GUID once up front.
+    local eventGUIDOk, eventGUID = pcall(UnitGUID, unit)
+    if not (eventGUIDOk and eventGUID) then return nil, nil, nil end
+
+    -- Party frames are dynamically assigned - check each frame's unit property.
+    -- 12.0.5: UnitIsUnit returns secrets/nil for party tokens, so identify the
+    -- matching frame by GUID instead of by token comparison.
     for i = 1, 5 do
         local frame = _G["CompactPartyFrameMember" .. i]
         if frame and frame.healthBar then
             local frameUnit
             local ok, u = pcall(function() return frame.displayedUnit or frame.unit end)
             if ok and u then frameUnit = u end
-            -- Check if this frame is displaying the unit we're looking for
-            if frameUnit and UnitIsUnit(frameUnit, unit) then
-                return frame.healthBar, frame, useDark
+            if frameUnit then
+                local frameGUIDOk, frameGUID = pcall(UnitGUID, frameUnit)
+                if frameGUIDOk and frameGUID == eventGUID then
+                    return frame.healthBar, frame, useDark
+                end
             end
         end
     end
