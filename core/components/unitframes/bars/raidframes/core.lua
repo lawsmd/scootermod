@@ -476,28 +476,41 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
 
     end
 
-    -- Create dispel indicator clone on the PARENT CompactUnitFrame.
-    -- Parent textures render AFTER useParentLevel children (healthBar + its fill),
-    -- guaranteeing visibility above the health overlay.
-    -- ARTWORK 5-6 is below OVERLAY (selectionHighlight, roleIcon, name).
+    -- Create dispel indicator clones on the PARENT CompactUnitFrame at OVERLAY
+    -- -7/-6. OVERLAY strictly dominates ARTWORK regardless of any useParentLevel
+    -- rendering-pass quirks (12.0.5 no longer guarantees "parent ARTWORK after
+    -- useParentLevel-child ARTWORK", which intermittently put the clones below
+    -- the StatusBar's C++ fill). Sits above Scoot border edges (OVERLAY -8) and
+    -- below selectionHighlight (OVERLAY 0), Scoot-elevated roleIcon (OVERLAY 6),
+    -- and name text (OVERLAY 7).
     if state and not state.dispelCloneCreated then
         local unitFrame = bar.GetParent and bar:GetParent()
         if unitFrame then
             state.dispelCloneCreated = true
 
-            local dFill = unitFrame:CreateTexture(nil, "ARTWORK", nil, 5)
+            local dFill = unitFrame:CreateTexture(nil, "OVERLAY", nil, -7)
             dFill:SetPoint("TOPLEFT", bar, "TOPLEFT")
             dFill:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
             dFill:Hide()
             state.dispelFill = dFill
 
-            local dHighlight = unitFrame:CreateTexture(nil, "ARTWORK", nil, 6)
+            local dHighlight = unitFrame:CreateTexture(nil, "OVERLAY", nil, -6)
             dHighlight:SetPoint("TOPLEFT", bar, "TOPLEFT")
             dHighlight:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
             dHighlight:SetAtlas("RaidFrame-DispelHighlight")
             dHighlight:Hide()
             state.dispelHighlight = dHighlight
         end
+    end
+
+    -- Belt-and-suspenders: re-assert draw layer on every ensureHealthOverlay pass.
+    -- Insulates against any Blizzard path or future hook that might re-layer
+    -- these textures during frame recycle, UpdateAll, or roster transitions.
+    if state and state.dispelFill and state.dispelFill.SetDrawLayer then
+        pcall(state.dispelFill.SetDrawLayer, state.dispelFill, "OVERLAY", -7)
+    end
+    if state and state.dispelHighlight and state.dispelHighlight.SetDrawLayer then
+        pcall(state.dispelHighlight.SetDrawLayer, state.dispelHighlight, "OVERLAY", -6)
     end
 
     -- Sync initial dispel state (handles styling applied while debuff is active)
@@ -1531,6 +1544,25 @@ function addon.DebugDumpRaidFrames()
             add(string.format("  fingerprint: %s", state.lastAppliedFingerprint and "set" or "nil"))
             add(string.format("  overlayHooksInstalled: %s", tostring(state.overlayHooksInstalled)))
             add(string.format("  textureSwapHooked: %s", tostring(state.textureSwapHooked)))
+            -- Dispel clone diagnostics (expected post-12.0.5-fix: OVERLAY -7/-6)
+            if state.dispelFill then
+                local okL, layer, sub = pcall(state.dispelFill.GetDrawLayer, state.dispelFill)
+                local okS, dfShown = pcall(state.dispelFill.IsShown, state.dispelFill)
+                local okA, dfAlpha = pcall(state.dispelFill.GetEffectiveAlpha, state.dispelFill)
+                add(string.format("  dispelFill: layer=%s sub=%s shown=%s effAlpha=%s",
+                    tostring(layer), tostring(sub), tostring(dfShown), tostring(dfAlpha)))
+            else
+                add("  dispelFill: nil (clone not created)")
+            end
+            if state.dispelHighlight then
+                local okL, layer, sub = pcall(state.dispelHighlight.GetDrawLayer, state.dispelHighlight)
+                local okS, dhShown = pcall(state.dispelHighlight.IsShown, state.dispelHighlight)
+                add(string.format("  dispelHighlight: layer=%s sub=%s shown=%s",
+                    tostring(layer), tostring(sub), tostring(dhShown)))
+            else
+                add("  dispelHighlight: nil (clone not created)")
+            end
+            add(string.format("  dispelCloneCreated: %s", tostring(state.dispelCloneCreated)))
         else
             add("  RaidFrameState: nil (no state for this bar)")
         end

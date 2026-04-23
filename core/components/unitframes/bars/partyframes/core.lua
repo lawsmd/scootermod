@@ -483,28 +483,41 @@ function PartyFrames.ensureHealthOverlay(bar, cfg)
 
     end
 
-    -- Create dispel indicator clone on the PARENT CompactUnitFrame.
-    -- Parent textures render AFTER useParentLevel children (healthBar + its fill),
-    -- guaranteeing visibility above the health overlay.
-    -- ARTWORK 5-6 is below OVERLAY (selectionHighlight, roleIcon, name).
+    -- Create dispel indicator clones on the PARENT CompactUnitFrame at OVERLAY
+    -- -7/-6. OVERLAY strictly dominates ARTWORK regardless of any useParentLevel
+    -- rendering-pass quirks (12.0.5 no longer guarantees "parent ARTWORK after
+    -- useParentLevel-child ARTWORK", which intermittently put the clones below
+    -- the StatusBar's C++ fill). Sits above Scoot border edges (OVERLAY -8) and
+    -- below selectionHighlight (OVERLAY 0), Scoot-elevated roleIcon (OVERLAY 6),
+    -- and name text (OVERLAY 7).
     if state and not state.dispelCloneCreated then
         local unitFrame = bar.GetParent and bar:GetParent()
         if unitFrame then
             state.dispelCloneCreated = true
 
-            local dFill = unitFrame:CreateTexture(nil, "ARTWORK", nil, 5)
+            local dFill = unitFrame:CreateTexture(nil, "OVERLAY", nil, -7)
             dFill:SetPoint("TOPLEFT", bar, "TOPLEFT")
             dFill:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
             dFill:Hide()
             state.dispelFill = dFill
 
-            local dHighlight = unitFrame:CreateTexture(nil, "ARTWORK", nil, 6)
+            local dHighlight = unitFrame:CreateTexture(nil, "OVERLAY", nil, -6)
             dHighlight:SetPoint("TOPLEFT", bar, "TOPLEFT")
             dHighlight:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
             dHighlight:SetAtlas("RaidFrame-DispelHighlight")
             dHighlight:Hide()
             state.dispelHighlight = dHighlight
         end
+    end
+
+    -- Belt-and-suspenders: re-assert draw layer on every ensureHealthOverlay pass.
+    -- Insulates against any Blizzard path or future hook that might re-layer
+    -- these textures during frame recycle, UpdateAll, or roster transitions.
+    if state and state.dispelFill and state.dispelFill.SetDrawLayer then
+        pcall(state.dispelFill.SetDrawLayer, state.dispelFill, "OVERLAY", -7)
+    end
+    if state and state.dispelHighlight and state.dispelHighlight.SetDrawLayer then
+        pcall(state.dispelHighlight.SetDrawLayer, state.dispelHighlight, "OVERLAY", -6)
     end
 
     -- Sync initial dispel state (handles styling applied while debuff is active)
