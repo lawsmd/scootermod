@@ -71,6 +71,7 @@ local UNIT_CONFIG = {
         hasManaBarFallback = false,
     },
 }
+table.freeze(UNIT_CONFIG)
 
 --------------------------------------------------------------------------------
 -- applyForSmallUnit: Unified handler for Pet, TargetOfTarget, FocusTarget

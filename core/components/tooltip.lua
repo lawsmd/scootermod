@@ -29,6 +29,7 @@ local COMPARISON_TOOLTIP_NAMES = {
     ItemRefShoppingTooltip1 = true,
     ItemRefShoppingTooltip2 = true,
 }
+table.freeze(COMPARISON_TOOLTIP_NAMES)
 
 -- Module-level font defaults (avoids per-call table allocation)
 local FONT_DEFAULTS = {
@@ -36,11 +37,13 @@ local FONT_DEFAULTS = {
     style = "OUTLINE",
     fontFace = "FRIZQT__",
 }
+table.freeze(FONT_DEFAULTS)
 local FONT_DEFAULTS_SMALL = {
     size = 12,
     style = "OUTLINE",
     fontFace = "FRIZQT__",
 }
+table.freeze(FONT_DEFAULTS_SMALL)
 
 -- Cached fallback font face (resolved lazily on first use)
 local fallbackFontFace
@@ -292,6 +295,7 @@ local ID_LABELS = {
     SetID = "Set ID",
     ExpansionID = "Expansion ID",
 }
+table.freeze(ID_LABELS)
 
 -- Map Blizzard TooltipDataType enums to our kind strings
 local TOOLTIP_DATA_TYPE_MAP = {}
