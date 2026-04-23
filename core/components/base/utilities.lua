@@ -655,6 +655,16 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
     local fillTex = ownerFrame.texture or (ownerFrame.GetStatusBarTexture and ownerFrame:GetStatusBarTexture())
     local bgTex = ownerFrame.Background or ownerFrame.background
 
+    -- Prediction/absorb StatusBar children that render on top of HealthBar.
+    -- Leaving these visible while the main bar is hidden produces residual
+    -- visuals (e.g. TotalAbsorbBar shield overlay on boss frames).
+    local PREDICTION_BAR_KEYS = {
+        "TotalAbsorbBar",
+        "HealAbsorbBar",
+        "MyHealPredictionBar",
+        "OtherHealPredictionBar",
+    }
+
     local function installAlphaHook(tex, flagName)
         if not tex then return end
         local st = getState(tex)
@@ -762,6 +772,25 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
                 installBarColorHook(tmhl)
             end
         end
+
+        -- Hide prediction/absorb StatusBar children of the HealthBar
+        for _, key in ipairs(PREDICTION_BAR_KEYS) do
+            local bar = ownerFrame[key]
+            if bar and not (bar.IsForbidden and bar:IsForbidden()) then
+                setProp(bar, "predictionBarHidden", true)
+                setProp(bar, "healthBarColorHidden", true)
+                if bar.SetAlpha then pcall(bar.SetAlpha, bar, 0) end
+                local barFill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+                if barFill then
+                    setProp(barFill, "healthBarFillHidden", true)
+                    if barFill.SetAlpha then pcall(barFill.SetAlpha, barFill, 0) end
+                    pcall(barFill.Hide, barFill)
+                    installAlphaHook(barFill, "healthBarFillHidden")
+                end
+                installAlphaHook(bar, "predictionBarHidden")
+                installBarColorHook(bar)
+            end
+        end
     else
         -- Restore the StatusBar fill color
         setProp(ownerFrame, "healthBarColorHidden", false)
@@ -805,6 +834,23 @@ local function SetHealthBarTextureOnlyHidden(ownerFrame, hidden)
                 if tmhl.SetStatusBarColor and tmhl.GetStatusBarColor then
                     local r, g, b = tmhl:GetStatusBarColor()
                     pcall(tmhl.SetStatusBarColor, tmhl, r, g, b, 1)
+                end
+            end
+        end
+
+        -- Restore prediction/absorb StatusBar children. Only restore alpha —
+        -- Blizzard's own update functions drive Show/Hide based on real state.
+        for _, key in ipairs(PREDICTION_BAR_KEYS) do
+            local bar = ownerFrame[key]
+            if bar and not (bar.IsForbidden and bar:IsForbidden()) then
+                setProp(bar, "predictionBarHidden", false)
+                setProp(bar, "healthBarColorHidden", false)
+                if bar.SetAlpha then pcall(bar.SetAlpha, bar, 1) end
+                local barFill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+                if barFill then
+                    setProp(barFill, "healthBarFillHidden", false)
+                    if barFill.SetAlpha then pcall(barFill.SetAlpha, barFill, 1) end
+                    pcall(barFill.Show, barFill)
                 end
             end
         end
