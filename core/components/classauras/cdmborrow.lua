@@ -123,6 +123,17 @@ local function RestoreHiddenCDMFrames(auraId)
     end
 end
 
+-- Clears every hidden-frame mapping and restores alpha. Used after Blizzard's
+-- CooldownViewerMixin:RefreshLayout shuffles the item pool (12.0.5+), which
+-- reassigns pooled frames to different auras and makes our per-frame mapping
+-- stale. Callers should schedule a rescan afterward to re-hide the correct frames.
+local function ResetAllHiddenFrames()
+    for frame in pairs(hiddenItemFrames) do
+        pcall(frame.SetAlphaFromBoolean, frame, true, 1, 0)
+    end
+    wipe(hiddenItemFrames)
+end
+
 local function RescanForCDMBorrow()
     local auras = CA._classAuras[playerClassToken]
     if not auras then return end
@@ -275,6 +286,19 @@ local function InstallMixinHooks()
         end)
     end
 
+    -- Hook RefreshLayout: 12.0.5 added an early-exit in CooldownViewerMixin:OnUnitAura
+    -- for isFullUpdate that calls self:RefreshLayout(). RefreshLayout does
+    -- itemFramePool:ReleaseAll() then re-acquires frames, reassigning pooled
+    -- Lua frame objects to different auras. Our hiddenItemFrames map goes stale
+    -- across this -- clear it and let the subsequent rescan re-hide the right frames.
+    local viewerMixin = _G.CooldownViewerMixin
+    if viewerMixin and viewerMixin.RefreshLayout then
+        hooksecurefunc(viewerMixin, "RefreshLayout", function()
+            ResetAllHiddenFrames()
+            ScheduleRescan()
+        end)
+    end
+
     -- CooldownFrame_Set/Clear hooks removed -- duration comes from DurationObject API
 
     cdmBorrow.hookInstalled = true
@@ -286,6 +310,7 @@ end
 
 CA._RescanForCDMBorrow = RescanForCDMBorrow
 CA._InstallMixinHooks = InstallMixinHooks
+CA._ResetAllHiddenCDMFrames = ResetAllHiddenFrames
 
 -- Expose for debug
 CA._cdmBorrow = cdmBorrow

@@ -208,6 +208,9 @@ caEventFrame:RegisterEvent("UNIT_AURA")
 caEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 caEventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 caEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+caEventFrame:RegisterEvent("ENCOUNTER_START")
+caEventFrame:RegisterEvent("CHALLENGE_MODE_START")
+caEventFrame:RegisterEvent("PVP_MATCH_ACTIVE")
 
 caEventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
@@ -396,6 +399,21 @@ caEventFrame:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Leaving combat: rescan auras and CDM alpha state
+        CA._ScanAllAuras()
+        CA._RescanForCDMBorrow()
+
+    elseif event == "ENCOUNTER_START"
+        or event == "CHALLENGE_MODE_START"
+        or event == "PVP_MATCH_ACTIVE" then
+        -- 12.0.5: auraInstanceID values re-randomize on these transitions, so
+        -- entries in both caches silently point at dead instances. Drop them
+        -- and trigger a fresh scan so the OnUpdate loop picks up new IDs.
+        -- ResetAllHiddenCDMFrames covers the case where RefreshLayout has not
+        -- fired yet at this point -- stale per-frame hide bindings would
+        -- otherwise leave unrelated CDM icons invisible after pool re-shuffle.
+        wipe(auraTracking)
+        wipe(guidCache)
+        CA._ResetAllHiddenCDMFrames()
         CA._ScanAllAuras()
         CA._RescanForCDMBorrow()
 
