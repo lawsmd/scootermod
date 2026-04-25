@@ -476,41 +476,40 @@ function RaidFrames.ensureHealthOverlay(bar, cfg)
 
     end
 
-    -- Create dispel indicator clones on the PARENT CompactUnitFrame at OVERLAY
-    -- -7/-6. OVERLAY strictly dominates ARTWORK regardless of any useParentLevel
-    -- rendering-pass quirks (12.0.5 no longer guarantees "parent ARTWORK after
-    -- useParentLevel-child ARTWORK", which intermittently put the clones below
-    -- the StatusBar's C++ fill). Sits above Scoot border edges (OVERLAY -8) and
-    -- below selectionHighlight (OVERLAY 0), Scoot-elevated roleIcon (OVERLAY 6),
-    -- and name text (OVERLAY 7).
+    -- Host dispel clones on a dedicated child Frame at explicit frameLevel 95.
+    -- Frame-level ordering is authoritative and independent of useParentLevel /
+    -- DrawLayer pass quirks, which 12.0.5 broke intermittently for the prior
+    -- parent-OVERLAY approach. 95 sits below dispelDebuffFrames (frameLevel 100)
+    -- so Blizzard's debuff icons remain above the clones.
     if state and not state.dispelCloneCreated then
         local unitFrame = bar.GetParent and bar:GetParent()
         if unitFrame then
             state.dispelCloneCreated = true
 
-            local dFill = unitFrame:CreateTexture(nil, "OVERLAY", nil, -7)
-            dFill:SetPoint("TOPLEFT", bar, "TOPLEFT")
-            dFill:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
+            local host = CreateFrame("Frame", nil, unitFrame)
+            host:SetFrameLevel(95)
+            host:SetPoint("TOPLEFT", bar, "TOPLEFT")
+            host:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
+            state.dispelHost = host
+
+            local dFill = host:CreateTexture(nil, "ARTWORK", nil, 0)
+            dFill:SetAllPoints(host)
             dFill:Hide()
             state.dispelFill = dFill
 
-            local dHighlight = unitFrame:CreateTexture(nil, "OVERLAY", nil, -6)
-            dHighlight:SetPoint("TOPLEFT", bar, "TOPLEFT")
-            dHighlight:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
+            local dHighlight = host:CreateTexture(nil, "ARTWORK", nil, 1)
+            dHighlight:SetAllPoints(host)
             dHighlight:SetAtlas("RaidFrame-DispelHighlight")
             dHighlight:Hide()
             state.dispelHighlight = dHighlight
         end
     end
 
-    -- Belt-and-suspenders: re-assert draw layer on every ensureHealthOverlay pass.
-    -- Insulates against any Blizzard path or future hook that might re-layer
-    -- these textures during frame recycle, UpdateAll, or roster transitions.
-    if state and state.dispelFill and state.dispelFill.SetDrawLayer then
-        pcall(state.dispelFill.SetDrawLayer, state.dispelFill, "OVERLAY", -7)
-    end
-    if state and state.dispelHighlight and state.dispelHighlight.SetDrawLayer then
-        pcall(state.dispelHighlight.SetDrawLayer, state.dispelHighlight, "OVERLAY", -6)
+    -- Re-assert host frameLevel on every ensureHealthOverlay pass in case
+    -- Blizzard's recycle/UpdateAll mutates descendant frame levels during
+    -- roster churn.
+    if state and state.dispelHost then
+        pcall(state.dispelHost.SetFrameLevel, state.dispelHost, 95)
     end
 
     -- Sync initial dispel state (handles styling applied while debuff is active)
@@ -1544,7 +1543,14 @@ function addon.DebugDumpRaidFrames()
             add(string.format("  fingerprint: %s", state.lastAppliedFingerprint and "set" or "nil"))
             add(string.format("  overlayHooksInstalled: %s", tostring(state.overlayHooksInstalled)))
             add(string.format("  textureSwapHooked: %s", tostring(state.textureSwapHooked)))
-            -- Dispel clone diagnostics (expected post-12.0.5-fix: OVERLAY -7/-6)
+            -- Dispel clone diagnostics (post-12.0.5-v2 fix: host Frame at frameLevel 95)
+            if state.dispelHost then
+                local okL, hLvl = pcall(state.dispelHost.GetFrameLevel, state.dispelHost)
+                local okS, hShown = pcall(state.dispelHost.IsShown, state.dispelHost)
+                add(string.format("  dispelHost: fLevel=%s shown=%s", tostring(hLvl), tostring(hShown)))
+            else
+                add("  dispelHost: nil (host not created)")
+            end
             if state.dispelFill then
                 local okL, layer, sub = pcall(state.dispelFill.GetDrawLayer, state.dispelFill)
                 local okS, dfShown = pcall(state.dispelFill.IsShown, state.dispelFill)
@@ -1563,6 +1569,22 @@ function addon.DebugDumpRaidFrames()
                 add("  dispelHighlight: nil (clone not created)")
             end
             add(string.format("  dispelCloneCreated: %s", tostring(state.dispelCloneCreated)))
+            -- Frame-level topology snapshot (to diagnose residual icon occlusion, if any)
+            local okBL, barLvl = pcall(bar.GetFrameLevel, bar)
+            local okPL, parLvl = pcall(frame.GetFrameLevel, frame)
+            local dDF = frame.dispelDebuffFrames
+            local ddfLvl, ddfParLvl
+            if dDF and dDF[1] then
+                local okD, v = pcall(dDF[1].GetFrameLevel, dDF[1])
+                if okD then ddfLvl = v end
+                local pp = dDF[1].GetParent and dDF[1]:GetParent()
+                if pp then
+                    local okP, v2 = pcall(pp.GetFrameLevel, pp)
+                    if okP then ddfParLvl = v2 end
+                end
+            end
+            add(string.format("  ctx: parLvl=%s bar:lvl=%s dDF[1]:lvl=%s dDF[1].parent:lvl=%s",
+                tostring(parLvl), tostring(barLvl), tostring(ddfLvl), tostring(ddfParLvl)))
         else
             add("  RaidFrameState: nil (no state for this bar)")
         end
