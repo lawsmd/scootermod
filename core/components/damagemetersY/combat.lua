@@ -163,19 +163,19 @@ function DMY._UpdateTimerText(windowIndex)
         else
             duration = win.mergedData and win.mergedData.durationSeconds
         end
-    elseif DMY._inCombat then
-        -- Use stopwatch during combat
-        local elapsed = GetTime() - DMY._combatStartTime
-        local preCombat = win._preCombatDuration or 0
-        -- For Overall, add pre-combat duration. For Current, just use elapsed.
-        if cfg.sessionType == 0 then -- Overall
-            duration = preCombat + elapsed
-        else
-            duration = elapsed
-        end
     else
-        -- OOC: read from merged data (authoritative)
-        duration = win.mergedData and win.mergedData.durationSeconds
+        -- Overall / Current: session-driven API, non-secret during combat.
+        -- Survives player death/resurrect because it tracks the session, not the player.
+        local ok, dur = pcall(C_DamageMeter.GetSessionDurationSeconds, cfg.sessionType)
+        if ok and type(dur) == "number" then
+            duration = dur
+        elseif not DMY._inCombat then
+            duration = win.mergedData and win.mergedData.durationSeconds
+        else
+            local elapsed = GetTime() - (DMY._combatStartTime or GetTime())
+            local preCombat = win._preCombatDuration or 0
+            duration = (cfg.sessionType == 0) and (preCombat + elapsed) or elapsed
+        end
     end
 
     -- Compute timer string early (needed for title width calculation)
