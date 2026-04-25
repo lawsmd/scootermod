@@ -100,8 +100,15 @@ local function CreateIconFrame()
     cd:SetHideCountdownNumbers(true)
     icon.Cooldown = cd
 
-    -- Stack count text
-    local count = icon:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    -- Text overlay sits above the Cooldown drain swipe so stack numbers
+    -- stay fully opaque regardless of showDuration progress.
+    local textOverlay = CreateFrame("Frame", nil, icon)
+    textOverlay:SetAllPoints(icon)
+    textOverlay:SetFrameLevel((cd:GetFrameLevel() or icon:GetFrameLevel()) + 5)
+    icon.TextOverlay = textOverlay
+
+    -- Stack count text (parented to the text overlay, anchored to the icon)
+    local count = textOverlay:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
     count:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -1, 1)
     count:Hide()
     icon.CountText = count
