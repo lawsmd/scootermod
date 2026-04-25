@@ -167,44 +167,100 @@ local function ReadAuraSize(frame)
 end
 
 --------------------------------------------------------------------------------
--- Buff count scanning — mirrors Blizzard's exact CompactUnitFrame filter.
+-- Buff count scanning — Scoot-owned reimplementation of AuraUtil.ShouldDisplayBuff.
 --
 -- `AuraUtil.ForEachAura(unit, "HELPFUL")` over-counts: it returns every helpful
 -- aura on the unit (raid buffs, personal buffs, passive auras, weapon enchants,
--- etc.), but CompactUnitFrame only renders auras that pass through
--- `AuraUtil.ProcessAura` → `AuraUtil.AuraUpdateChangedType.Buff`. That function
--- gates on `aura.isHelpful` AND `AuraUtil.ShouldDisplayBuff(sourceUnit, spellId,
--- canApplyAura)`, which handles the raid-vs-personal distinction.
+-- etc.), but CompactUnitFrame only renders auras passing a visibility filter.
 --
--- Blizzard_PrivateAurasUI runs this exact filter at
--- PrivateAuraAnchorContainerMixin:ProcessAura (Blizzard_PrivateAurasUI.lua:418).
--- Blizzard_FrameXMLUtil does NOT use a secure environment, so AuraUtil.* is
--- fully reachable from addon context.
+-- We can NOT call AuraUtil.ProcessAura / AuraUtil.ShouldDisplayBuff to replicate
+-- that filter: ShouldDisplayBuff indexes the closure-local `cachedVisualizationInfo`
+-- table (AuraUtil.lua:272), which is wiped on every PLAYER_REGEN_DISABLED by an
+-- EventRegistry callback. The fresh-allocated table is born forbidden to Scoot
+-- because combat-entry event dispatch has already propagated our taint, so every
+-- in-combat call into ShouldDisplayBuff raises
+-- "attempted to index a table that cannot be accessed while tainted". pcall
+-- catches the error but does not suppress Blizzard's error taplog.
+--
+-- Instead, we inline the ShouldDisplayBuff logic using our own caches of
+-- C_Spell.GetVisibilityInfo and C_Spell.IsSelfBuff (static spell-metadata C APIs,
+-- not combat-state). Our cache tables are addon-owned; if they get Scoot-tainted
+-- that is fine because only Scoot reads them.
 --------------------------------------------------------------------------------
+
+local visibilityCache = {}
+local selfBuffCache = {}
+
+local function ScootGetVisibilityInfo(spellId)
+    local cached = visibilityCache[spellId]
+    if cached then return cached[1], cached[2], cached[3] end
+    local SAV = _G.Enum and _G.Enum.SpellAuraVisibilityType
+    if not SAV or not C_Spell or not C_Spell.GetVisibilityInfo then
+        return nil, nil, nil
+    end
+    local visType = UnitAffectingCombat("player") and SAV.RaidInCombat or SAV.RaidOutOfCombat
+    local ok, a, b, c = pcall(C_Spell.GetVisibilityInfo, spellId, visType)
+    if not ok then return nil, nil, nil end
+    visibilityCache[spellId] = { a, b, c }
+    return a, b, c
+end
+
+local function ScootIsSelfBuff(spellId)
+    local cached = selfBuffCache[spellId]
+    if cached ~= nil then return cached end
+    if not C_Spell or not C_Spell.IsSelfBuff then return false end
+    local ok, v = pcall(C_Spell.IsSelfBuff, spellId)
+    if not ok then return false end
+    selfBuffCache[spellId] = v and true or false
+    return selfBuffCache[spellId]
+end
+
+local function ScootShouldDisplayBuff(sourceUnit, spellId, canApplyAura)
+    local hasCustom, alwaysShowMine, showForMySpec = ScootGetVisibilityInfo(spellId)
+    if hasCustom then
+        return showForMySpec
+            or (alwaysShowMine and (sourceUnit == "player" or sourceUnit == "pet" or sourceUnit == "vehicle"))
+    elseif (sourceUnit == "player" or sourceUnit == "pet" or sourceUnit == "vehicle") and canApplyAura then
+        return not ScootIsSelfBuff(spellId)
+    else
+        return false
+    end
+end
 
 local function CountHelpfulAuras(unit)
     if not unit or not UnitExists(unit) then return 0 end
-    if not AuraUtil or not AuraUtil.ForEachAura or not AuraUtil.ProcessAura then return 0 end
-    if not AuraUtil.AuraUpdateChangedType then return 0 end
+    if not AuraUtil or not AuraUtil.ForEachAura then return 0 end
 
-    local BuffType = AuraUtil.AuraUpdateChangedType.Buff
     local count = 0
-
     local function handle(aura)
         if not aura then return false end
-        -- pcall around ProcessAura in case any reads secret out from under us.
-        -- Writes aura.isBuff / aura.isPriorityAura side-effectually; that's on a
-        -- table we own so taint is not a concern.
-        local ok, result = pcall(AuraUtil.ProcessAura, aura, false, false, false, false)
-        if ok and result == BuffType then
+        if aura.isNameplateOnly then return false end
+        if aura.isBossAura and not aura.isRaid then return false end
+        if not aura.isHelpful then return false end
+
+        local spellId      = aura.spellId
+        local sourceUnit   = aura.sourceUnit
+        local canApplyAura = aura.canApplyAura
+        if type(spellId) ~= "number" then return false end
+
+        if ScootShouldDisplayBuff(sourceUnit, spellId, canApplyAura) then
             count = count + 1
         end
-        return count >= MAX_BUFFS  -- stop once we've hit the cap
+        return count >= MAX_BUFFS
     end
 
     pcall(AuraUtil.ForEachAura, unit, "HELPFUL", nil, handle, true)
     return math.min(count, MAX_BUFFS)
 end
+
+-- Cache invalidation on spec change. Visibility info is spec-specific (matches
+-- AuraUtil's own PLAYER_SPECIALIZATION_CHANGED reset at AuraUtil.lua:266-269).
+local cacheResetFrame = CreateFrame("Frame")
+cacheResetFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+cacheResetFrame:SetScript("OnEvent", function()
+    visibilityCache = {}
+    selfBuffCache = {}
+end)
 
 --------------------------------------------------------------------------------
 -- Per-slot positioning
