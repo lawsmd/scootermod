@@ -146,7 +146,6 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("  /scoot debug dmY fields")
             addon:Print("  /scoot debug dmY drilldown")
             addon:Print("  /scoot debug dmY multicol")
-            addon:Print("  /scoot debug privateauras | pa  (dump private aura anchor state)")
             return
         end
 
@@ -327,16 +326,6 @@ function SlashCmdList.SCOOT(msg, editBox)
             return
         end
 
-        -- /scoot debug privateauras
-        if sub1 == "privateauras" or sub1 == "pa" then
-            if addon.DebugPrivateAuras then
-                addon.DebugPrivateAuras()
-            else
-                addon:Print("Private Auras debug not available (auras module missing).")
-            end
-            return
-        end
-
         -- /scoot debug raidframes
         if sub1 == "raidframes" or sub1 == "rf" then
             if addon.DebugDumpRaidFrames then
@@ -470,7 +459,7 @@ function SlashCmdList.SCOOT(msg, editBox)
 
         local target = args[2]
         if not target or target == "" then
-            addon:Print("Usage: /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|dim|trackedbars|classauras|privateauras|<FrameName>>")
+            addon:Print("Usage: /scoot debug <player|target|focus|pet|ab1..ab8|essential|utility|micro|stance|buffs|debuffs|offscreen|powerbarpos|dim|trackedbars|classauras|<FrameName>>")
             return
         end
         if addon.DebugDump then

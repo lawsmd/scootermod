@@ -1,4 +1,7 @@
--- auras.lua - Buff/debuff frame styling: icon borders, overlays, font, visibility hooks
+-- auras.lua - Buff/debuff frame styling for regular auras in BuffFrame.AuraContainer
+-- and DebuffFrame.AuraContainer. Private auras (DebuffFrame.PrivateAuraAnchors /
+-- Blizzard_PrivateAurasUI) are intentionally not touched — see
+-- ADDONCONTEXT/docs/buffs&debuffs.md for full rationale.
 local addonName, addon = ...
 local Util = addon.ComponentsUtil
 local CleanupIconBorderAttachments = Util.CleanupIconBorderAttachments
@@ -9,18 +12,6 @@ local PlayerInCombat = Util.PlayerInCombat
 -- Weak-key lookup tables to avoid writing properties to Blizzard frames
 -- (which would taint them and cause secret value errors during Edit Mode operations)
 local auraState = setmetatable({}, { __mode = "k" })  -- frame/fs/tex/border -> state table
-
--- Attempt 12 (see ADDONCONTEXT/docs/buffs&debuffs.md): private aura pool frames
--- (PrivateAuraTemplate) are declared inside a forbidden ScopedModifier, so direct
--- styling (SetAlpha, CreateTexture, hooksecurefunc on children) fails silently on
--- them. Instead we re-register each BuffFramePrivateAuraAnchor with our own
--- iconWidth/iconHeight/borderScale so Blizzard's C-side sizes the DebuffBorder
--- correctly at pool-frame creation. Weak-key tables keyed by anchor avoid writing
--- state to Blizzard's anchor frames (taint-safe).
-local ourAnchorIDs    = setmetatable({}, { __mode = "k" })  -- anchor -> our replacement anchorID
-local ourShadowFrames = setmetatable({}, { __mode = "k" })  -- anchor -> our UIParent-parented shadow
-local combatRetryAnchors = nil  -- set of anchors pending re-register after PLAYER_REGEN_ENABLED
-local combatRetryFrame = nil
 
 -- Config version tracking: skip re-styling auras when config hasn't changed (OPT-01)
 local configVersions = {}  -- componentId -> integer
@@ -116,142 +107,6 @@ local function updateTempEnchantBorderOverlay(aura, state, iconWidth, iconHeight
     overlay:Show()
 end
 
--- Forward declaration for combat retry (defined with registerForAnchor below)
-local registerForAnchor
-
-local function ensureCombatRetryWatcher()
-    if combatRetryFrame then return end
-    combatRetryFrame = CreateFrame("Frame")
-    combatRetryFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    combatRetryFrame:SetScript("OnEvent", function()
-        if not combatRetryAnchors then return end
-        local queued = combatRetryAnchors
-        combatRetryAnchors = nil
-        for a in pairs(queued) do
-            if registerForAnchor then registerForAnchor(a) end
-        end
-    end)
-end
-
--- Attempt 12: Register our replacement for a private aura anchor with non-square sizing.
--- Mirrors BigWigs' pattern (BigWigs_Plugins/PrivateAuras.lua:1100-1180).
---
--- When the user has Icon Shape configured to non-square (tallWideRatio != 0):
---   1. Remove Blizzard's anchor registration for this slot
---   2. Register ours with iconWidth/iconHeight = Scoot's non-square dimensions
---   3. Pass borderScale = h/32*2 so Blizzard's C-side sizes DebuffBorder to
---      (w + 5*borderScale) x (h + 5*borderScale) — a non-square rectangle
---   4. Parent the new anchor to a shadow UIParent-parented frame, NOT to Blizzard's
---      anchor (avoids taint propagation through DebuffFrame -> EditModeManagerFrame)
---
--- When user switches back to square (w == h):
---   We drop our replacement, but Blizzard's was already removed. User needs /reload
---   to restore normal private-aura display. Documented in buffs&debuffs.md.
-registerForAnchor = function(anchor)
-    if not anchor or not anchor.unit or not anchor.auraIndex then return end
-    if not anchor.Icon then return end
-
-    -- Zero-Touch: only intervene when debuffs component is configured (past proxy DB)
-    local debuffsComp = addon.Components and addon.Components.debuffs
-    if not debuffsComp then return end
-    if debuffsComp._ScootDBProxy and debuffsComp.db == debuffsComp._ScootDBProxy then
-        return
-    end
-
-    -- Determine target dimensions from Icon Shape config.
-    -- CRITICAL: GetDimensionsForComponent(componentId, ratio) is pure — it does NOT
-    -- read the DB; the caller must pass the ratio or it defaults to 0 (square).
-    -- Passing only the componentId made Attempts 12 and the original Attempt 13
-    -- dormant (always isNonSquare=false). Fixed 2026-04-24 mid-Attempt-13.
-    local ratio = tonumber(debuffsComp.db and debuffsComp.db.tallWideRatio) or 0
-    local w, h
-    if addon.IconRatio and addon.IconRatio.GetDimensionsForComponent then
-        w, h = addon.IconRatio.GetDimensionsForComponent("debuffs", ratio)
-    end
-    local isNonSquare = (type(w) == "number") and (type(h) == "number") and (w ~= h)
-
-    if not isNonSquare then
-        -- Square icons: no intervention needed. Drop any prior replacement.
-        local prev = ourAnchorIDs[anchor]
-        if prev then
-            pcall(C_UnitAuras.RemovePrivateAuraAnchor, prev)
-            ourAnchorIDs[anchor] = nil
-        end
-        return
-    end
-
-    -- Combat guard (mirrors BigWigs PrivateAuras.lua:1104-1106)
-    if InCombatLockdown and InCombatLockdown() then
-        combatRetryAnchors = combatRetryAnchors or {}
-        combatRetryAnchors[anchor] = true
-        ensureCombatRetryWatcher()
-        return
-    end
-
-    -- Clean up any prior replacement for this anchor
-    local prev = ourAnchorIDs[anchor]
-    if prev then
-        pcall(C_UnitAuras.RemovePrivateAuraAnchor, prev)
-        ourAnchorIDs[anchor] = nil
-    end
-
-    -- Remove Blizzard's registration. anchor.anchorID stays set (writing nil would
-    -- taint). Stale ID is harmless — Blizzard's next SetUnit calls Remove on it,
-    -- which silently no-ops (BigWigs relies on this at PrivateAuras.lua:1112).
-    if anchor.anchorID then
-        pcall(C_UnitAuras.RemovePrivateAuraAnchor, anchor.anchorID)
-    end
-
-    -- Shadow parent frame (UIParent-parented). SetAllPoints(anchor.Icon) tracks
-    -- Blizzard's anchor sizing so Edit Mode layout changes propagate automatically.
-    -- Attempt 13: pre-size to (w,h) before SetAllPoints in case anchor.Icon is 0x0
-    -- at SetUnit-hook-fire time (aura not yet rendered); SetFixedFrameStrata/Level
-    -- and level=1000 match BigWigs PrivateAuras.lua:1130-1133.
-    local shadow = ourShadowFrames[anchor]
-    if not shadow then
-        shadow = CreateFrame("Frame", nil, UIParent)
-        pcall(shadow.SetFrameStrata, shadow, "MEDIUM")
-        pcall(shadow.SetFixedFrameStrata, shadow, true)
-        pcall(shadow.SetFrameLevel, shadow, 1000)
-        pcall(shadow.SetFixedFrameLevel, shadow, true)
-        ourShadowFrames[anchor] = shadow
-    end
-    pcall(shadow.SetSize, shadow, w, h)
-    pcall(shadow.ClearAllPoints, shadow)
-    pcall(shadow.SetAllPoints, shadow, anchor.Icon)
-    pcall(shadow.Show, shadow)
-
-    -- BigWigs' formula: borderScale = size/32*2. Blizzard's SetUpAnchor then sizes
-    -- DebuffBorder to (w + 5*borderScale) x (h + 5*borderScale). Args mirror
-    -- BigWigs_Plugins/PrivateAuras.lua:1151-1170 exactly — isContainer=false is the
-    -- critical difference from Attempt 12; durationAnchor omitted because
-    -- showCountdownNumbers=false makes it meaningless (and BigWigs doesn't send it).
-    local borderScale = h / 32 * 2
-    local args = {
-        unitToken = anchor.unit,
-        auraIndex = anchor.auraIndex,
-        parent = shadow,
-        showCountdownFrame = false,
-        showCountdownNumbers = false,
-        isContainer = false,
-        iconInfo = {
-            iconAnchor = {
-                point = "CENTER",
-                relativeTo = shadow,
-                relativePoint = "CENTER",
-                offsetX = 0,
-                offsetY = 0,
-            },
-            iconWidth = w,
-            iconHeight = h,
-            borderScale = borderScale,
-        },
-    }
-    local ok, newID = pcall(C_UnitAuras.AddPrivateAuraAnchor, args)
-    if ok and newID then
-        ourAnchorIDs[anchor] = newID
-    end
-end
 
 function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
     if not component or (component.id ~= "buffs" and component.id ~= "debuffs") then return end
@@ -598,30 +453,34 @@ function addon.ApplyAuraFrameVisualsFor(component, forceRestyle)
     if frame.TempEnchantContainer and type(frame.TempEnchantContainer.auraFrames) == "table" then
         addCollection(frame.TempEnchantContainer.auraFrames)
     end
+    -- Note: frame.PrivateAuraAnchors is intentionally NOT iterated here. Private aura
+    -- pool frames are forbidden and Scoot does not customize them.
+    -- See ADDONCONTEXT/docs/buffs&debuffs.md for full rationale.
+    --
+    -- HOWEVER: Blizzard's AuraFrameMixin:AuraFrame_OnLoad
+    -- (wow-ui-source/Blizzard_BuffFrame/BuffFrame.lua:189-191) MIXES the placeholder
+    -- private aura anchors (PrivateAuraAnchors[1..6]) into frame.auraFrames alongside
+    -- regular AuraButtonTemplate buttons. So our addCollection(frame.auraFrames) above
+    -- pulls them in even though we don't add PrivateAuraAnchors directly. We must
+    -- skip them in the per-aura loop, otherwise we'd resize anchor.Icon to non-square,
+    -- and Blizzard's BuffFramePrivateAuraAnchorMixin:SetUnit (BuffFrame.lua:1287-1292)
+    -- reads anchor.Icon:GetWidth/GetHeight when building iconInfo for AddPrivateAuraAnchor —
+    -- propagating our non-square sizing into the C-side pool-frame registration and
+    -- rendering the private aura icon rectangular even with all our private-aura-specific
+    -- code removed.
+    local privateAuraSkipSet = {}
     if type(frame.PrivateAuraAnchors) == "table" then
         for _, anchor in pairs(frame.PrivateAuraAnchors) do
-            if anchor then
-                if type(anchor.auraFrames) == "table" then
-                    addCollection(anchor.auraFrames)
-                end
-                if anchor.AuraContainer and type(anchor.AuraContainer.auraFrames) == "table" then
-                    addCollection(anchor.AuraContainer.auraFrames)
-                end
-            end
+            if anchor then privateAuraSkipSet[anchor] = true end
         end
     end
-
-    -- Attempt 12: private aura pool frames are NOT iterated here. They are forbidden
-    -- frames (see buffs&debuffs.md); styling calls would silently no-op. Instead we
-    -- re-register each BuffFramePrivateAuraAnchor via registerForAnchor() so Blizzard
-    -- sizes the pool frame's DebuffBorder correctly at creation.
 
     local currentVersion = configVersions[componentId] or 0
 
     local processed = {}
     for _, collection in ipairs(auraCollections) do
         for _, aura in ipairs(collection) do
-            if aura and not processed[aura] then
+            if aura and not processed[aura] and not privateAuraSkipSet[aura] then
                 processed[aura] = true
                 -- Shared preamble (safe reads, no pcall needed)
                 local icon = aura.Icon or aura.icon or aura.IconTexture
@@ -882,51 +741,12 @@ local function RefreshAuraOpacity(self)
     pcall(container.SetAlpha, container, appliedOpacity / 100)
 end
 
--- Attempt 12: Install hook on BuffFramePrivateAuraAnchorMixin:SetUnit so we can
--- re-register each anchor with our iconWidth/iconHeight/borderScale when a unit
--- is assigned. Also do a retroactive sweep of anchors Blizzard already set up
--- before Scoot became configured (profile switch, first settings change, etc.).
-local function installPrivateAuraAnchorHook(self)
-    if addon._PrivateAuraSetUnitHooked then return end
-    if type(BuffFramePrivateAuraAnchorMixin) ~= "table"
-       or type(BuffFramePrivateAuraAnchorMixin.SetUnit) ~= "function" then
-        return
-    end
-    addon._PrivateAuraSetUnitHooked = true
-
-    hooksecurefunc(BuffFramePrivateAuraAnchorMixin, "SetUnit", function(anchor, unit)
-        if not unit then
-            -- Blizzard cleared the anchor — drop our replacement
-            local id = ourAnchorIDs[anchor]
-            if id then
-                pcall(C_UnitAuras.RemovePrivateAuraAnchor, id)
-                ourAnchorIDs[anchor] = nil
-            end
-            return
-        end
-        registerForAnchor(anchor)
-    end)
-
-    -- Retroactive: SetUnit may have already fired for each of the 6 anchors before
-    -- our hook installed (e.g., user configures Scoot mid-session). Replace now.
-    if DebuffFrame and type(DebuffFrame.PrivateAuraAnchors) == "table" then
-        for _, anchor in pairs(DebuffFrame.PrivateAuraAnchors) do
-            if anchor and anchor.unit then
-                registerForAnchor(anchor)
-            end
-        end
-    end
-end
 
 local function ApplyAuraFrameStyling(self)
     local frame = _G[self.frameName]
     if not frame or not frame.AuraContainer then return end
     -- Zero-Touch: skip unconfigured components (still on proxy DB)
     if self._ScootDBProxy and self.db == self._ScootDBProxy then return end
-
-    if self.id == "debuffs" then
-        installPrivateAuraAnchorHook(self)
-    end
 
     local frameState = getState(frame)
     if hooksecurefunc and frameState and not frameState.auraHooked then
@@ -1005,18 +825,6 @@ local function ApplyAuraFrameStyling(self)
     -- OPT-01: Bump config version so ApplyStyling (profile switch, etc.) forces full re-style
     addon.BumpAuraConfigVersion(self.id)
 
-    -- Attempt 12: re-register private aura anchors with current Icon Shape dimensions.
-    -- BuffFramePrivateAuraAnchorMixin:SetUnit early-exits when unit hasn't changed, so
-    -- it will NOT re-fire on a settings change — we must iterate manually here. This
-    -- path also handles the initial configuration (proxy DB → real DB transition).
-    if self.id == "debuffs" and DebuffFrame and type(DebuffFrame.PrivateAuraAnchors) == "table" then
-        for _, anchor in pairs(DebuffFrame.PrivateAuraAnchors) do
-            if anchor and anchor.unit then
-                registerForAnchor(anchor)
-            end
-        end
-    end
-
     if addon and addon.ApplyAuraFrameVisualsFor then
         addon.ApplyAuraFrameVisualsFor(self)
     end
@@ -1037,168 +845,6 @@ local function ApplyAuraFrameStyling(self)
     end
 end
 
--- Attempt 13 diagnostic: dumps the complete state needed to triage private-aura
--- border failures. Intended use: run mid-encounter with an active private aura
--- debuff, paste the output for analysis. See ADDONCONTEXT/docs/buffs&debuffs.md
--- "If Private Aura Borders Still Appear Square After Attempt 12" for the decision
--- tree this populates.
-function addon.DebugPrivateAuras()
-    local lines = {}
-    local function push(s) lines[#lines + 1] = s end
-    local function fmt(v)
-        if v == nil then return "nil" end
-        local t = type(v)
-        if t == "boolean" or t == "number" then return tostring(v) end
-        if t == "string" then return v end
-        return "<" .. t .. ">"
-    end
-    local function safeSize(obj)
-        if not obj then return "nil obj" end
-        local ok, w, h = pcall(obj.GetSize, obj)
-        if not ok then return "err" end
-        if type(w) ~= "number" or type(h) ~= "number" then return "secret" end
-        return string.format("%.0fx%.0f", w, h)
-    end
-    local function safeShown(obj)
-        if not obj then return "nil" end
-        local ok, v = pcall(obj.IsShown, obj)
-        if not ok then return "err" end
-        if issecretvalue(v) then return "secret" end
-        return tostring(v)
-    end
-    -- Also guard fmt against secret values (was passing them through to tostring)
-    local origFmt = fmt
-    fmt = function(v)
-        if v == nil then return "nil" end
-        if issecretvalue(v) then return "<secret>" end
-        return origFmt(v)
-    end
-
-    push("=== Scoot Attempt 13 :: Private Aura Diagnostic ===")
-    push("Date: " .. date("%Y-%m-%d %H:%M:%S"))
-    push("")
-
-    -- Hook state
-    push("-- Hook state --")
-    push("addon._PrivateAuraSetUnitHooked = " .. fmt(addon._PrivateAuraSetUnitHooked))
-    push("BuffFramePrivateAuraAnchorMixin = " .. type(BuffFramePrivateAuraAnchorMixin))
-    push("")
-
-    -- Component / zero-touch state
-    push("-- Component state --")
-    local debuffsComp = addon.Components and addon.Components.debuffs
-    push("Components.debuffs exists = " .. tostring(debuffsComp ~= nil))
-    if debuffsComp then
-        local isProxy = (debuffsComp._ScootDBProxy and debuffsComp.db == debuffsComp._ScootDBProxy) or false
-        push("debuffs on proxy DB (unconfigured) = " .. tostring(isProxy))
-    end
-    local ratio = tonumber(debuffsComp and debuffsComp.db and debuffsComp.db.tallWideRatio) or 0
-    local w, h, isNonSquare, borderScale
-    if addon.IconRatio and addon.IconRatio.GetDimensionsForComponent then
-        w, h = addon.IconRatio.GetDimensionsForComponent("debuffs", ratio)
-    end
-    isNonSquare = (type(w) == "number") and (type(h) == "number") and (w ~= h)
-    if type(h) == "number" then borderScale = h / 32 * 2 end
-    push(string.format("db.tallWideRatio = %s (from debuffs component)", fmt(ratio)))
-    push(string.format("IconRatio -> w=%s h=%s isNonSquare=%s borderScale=%s",
-        fmt(w), fmt(h), fmt(isNonSquare), fmt(borderScale)))
-    if isNonSquare and type(w) == "number" and type(h) == "number" and type(borderScale) == "number" then
-        push(string.format("Expected DebuffBorder size = %.1f x %.1f",
-            w + 5 * borderScale, h + 5 * borderScale))
-    end
-    push("")
-
-    -- Per-anchor dump
-    push("-- DebuffFrame.PrivateAuraAnchors --")
-    if DebuffFrame and type(DebuffFrame.PrivateAuraAnchors) == "table" then
-        for i, anchor in pairs(DebuffFrame.PrivateAuraAnchors) do
-            push(string.format("[%s] anchor=%s", tostring(i), tostring(anchor)))
-            if anchor then
-                push("    unit        = " .. fmt(anchor.unit))
-                push("    auraIndex   = " .. fmt(anchor.auraIndex))
-                push("    anchorID    = " .. fmt(anchor.anchorID))
-                push("    ourAnchorID = " .. fmt(ourAnchorIDs[anchor]))
-                local shadow = ourShadowFrames[anchor]
-                push("    shadow      = " .. (shadow and ("exists size=" .. safeSize(shadow) ..
-                    " shown=" .. safeShown(shadow)) or "nil"))
-                push("    anchor.Icon        size=" .. safeSize(anchor.Icon) ..
-                    " shown=" .. safeShown(anchor.Icon))
-                push("    anchor.DebuffBorder      size=" .. safeSize(anchor.DebuffBorder) ..
-                    " shown=" .. safeShown(anchor.DebuffBorder))
-                push("    anchor.TempEnchantBorder size=" .. safeSize(anchor.TempEnchantBorder) ..
-                    " shown=" .. safeShown(anchor.TempEnchantBorder))
-            end
-        end
-    else
-        push("DebuffFrame or .PrivateAuraAnchors not available")
-    end
-    push("")
-
-    -- Pool frame sweep: walk DebuffFrame children looking for any visible DebuffBorder
-    -- that isn't on one of the anchors. These are the actual pool-frame DebuffBorders
-    -- that produce the visible square border bug.
-    push("-- Pool frame sweep (visible DebuffBorders in DebuffFrame tree) --")
-    local function sweep(parent, depth)
-        if not parent or depth > 6 then return end
-        -- GetChildren returns multiple values (not a table); capture a bounded tuple.
-        -- Trailing nils are fine — ipairs stops at the first nil.
-        local ok, a, b, c, d, e, f, g, h2, i2, j2 = pcall(function() return parent:GetChildren() end)
-        if not ok then return end
-        local kids = { a, b, c, d, e, f, g, h2, i2, j2 }
-        for _, child in ipairs(kids) do
-            if child then
-                local forbidden = false
-                local ok2, isf = pcall(child.IsForbidden, child)
-                if ok2 and isf then forbidden = true end
-                local db = child.DebuffBorder
-                if db then
-                    local dbShown = safeShown(db)
-                    if dbShown == "true" then
-                        local childName = "<?>"
-                        local okn, nm = pcall(child.GetName, child)
-                        if okn and type(nm) == "string" and not issecretvalue(nm) then
-                            childName = nm
-                        end
-                        -- Guard string.format against secret args: format with all
-                        -- pre-stringified values, then re-check the result for secrecy.
-                        local line = string.format("  child=%s forbidden=%s DebuffBorder size=%s",
-                            childName, tostring(forbidden), safeSize(db))
-                        if issecretvalue(line) then
-                            line = "  child=<secret> forbidden=" .. tostring(forbidden) ..
-                                " DebuffBorder size=" .. safeSize(db)
-                        end
-                        push(line)
-                    end
-                end
-                if not forbidden then
-                    sweep(child, depth + 1)
-                end
-            end
-        end
-    end
-    if DebuffFrame then sweep(DebuffFrame, 0) end
-    push("(if no entries above during an active private aura, pool frames are parented elsewhere or forbidden-opaque)")
-    push("")
-
-    -- Combat-retry queue state
-    push("-- Combat retry state --")
-    push("InCombatLockdown() = " .. tostring(InCombatLockdown and InCombatLockdown()))
-    local queued = 0
-    if combatRetryAnchors then
-        for _ in pairs(combatRetryAnchors) do queued = queued + 1 end
-    end
-    push("combatRetryAnchors queued count = " .. queued)
-    push("combatRetryFrame exists = " .. tostring(combatRetryFrame ~= nil))
-
-    push("")
-    push("=== End diagnostic ===")
-
-    if addon.DebugShowWindow then
-        addon.DebugShowWindow("Private Auras", lines)
-    elseif addon.Print then
-        addon:Print(table.concat(lines, "\n"))
-    end
-end
 
 addon:RegisterComponentInitializer(function(self)
     local Component = addon.ComponentPrototype
