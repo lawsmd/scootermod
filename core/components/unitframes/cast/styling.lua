@@ -558,93 +558,6 @@ do
 					end
 				end
 
-				-- Player Cast Bar: ChannelShadow visibility
-				-- The ChannelShadow is the shadow effect behind the cast bar during channeled spells.
-				-- Use SetAlpha instead of SetShown/Hide to avoid fighting Blizzard's internal show/hide logic during channeling.
-				if isPlayer then
-					local channelShadow = frame.ChannelShadow
-					if channelShadow then
-						local hideChannelingShadow = cfg.hideChannelingShadow == true
-						if channelShadow.SetAlpha then
-							pcall(channelShadow.SetAlpha, channelShadow, hideChannelingShadow and 0 or 1)
-						end
-					end
-				end
-
-				-- Player Cast Bar: ChargeFlash / Shine / WispGlow visibility
-				-- These are additive-blend effect textures that flash/glow at various cast moments.
-				-- Use SetAlpha to avoid fighting Blizzard's animation-driven show/hide logic.
-				if isPlayer then
-					local chargeFlash = frame.ChargeFlash
-					if chargeFlash and cfg.hideChargeFlash then
-						if chargeFlash.SetAlpha then
-							pcall(chargeFlash.SetAlpha, chargeFlash, 0)
-						end
-					end
-					local shine = frame.Shine
-					if shine and cfg.hideCastShine then
-						if shine.SetAlpha then
-							pcall(shine.SetAlpha, shine, 0)
-						end
-					end
-					local wispGlow = frame.WispGlow
-					if wispGlow and cfg.hideWispGlow then
-						if wispGlow.SetAlpha then
-							pcall(wispGlow.SetAlpha, wispGlow, 0)
-						end
-					end
-					local standardGlow = frame.StandardGlow
-					if standardGlow then
-						local hide = not not cfg.hideStandardGlow
-						if standardGlow.SetAlpha then
-							pcall(standardGlow.SetAlpha, standardGlow, hide and 0 or 1)
-						end
-					end
-					local craftGlow = frame.CraftGlow
-					if craftGlow then
-						local hide = not not cfg.hideStandardGlow
-						if craftGlow.SetAlpha then
-							pcall(craftGlow.SetAlpha, craftGlow, hide and 0 or 1)
-						end
-					end
-					local sparkles01 = frame.Sparkles01
-					if sparkles01 and cfg.hideChannelSparkles then
-						if sparkles01.SetAlpha then
-							pcall(sparkles01.SetAlpha, sparkles01, 0)
-						end
-					end
-					local sparkles02 = frame.Sparkles02
-					if sparkles02 and cfg.hideChannelSparkles then
-						if sparkles02.SetAlpha then
-							pcall(sparkles02.SetAlpha, sparkles02, 0)
-						end
-					end
-					local baseGlow = frame.BaseGlow
-					if baseGlow and cfg.hideBaseGlow then
-						if baseGlow.SetAlpha then
-							pcall(baseGlow.SetAlpha, baseGlow, 0)
-						end
-					end
-
-					-- hideCastFlash: Flash (completion glow)
-					if cfg.hideCastFlash then
-						local flash = frame.Flash
-						if flash and flash.SetAlpha then pcall(flash.SetAlpha, flash, 0) end
-					end
-					-- hideInterruptGlow: InterruptGlow (interrupt glow)
-					if cfg.hideInterruptGlow then
-						local intGlow = frame.InterruptGlow
-						if intGlow and intGlow.SetAlpha then pcall(intGlow.SetAlpha, intGlow, 0) end
-					end
-
-					-- hideCompletionFlare: EnergyGlow + Flakes01-03 (upward animation on standard completion)
-					if cfg.hideCompletionFlare then
-						for _, tex in ipairs({ frame.EnergyGlow, frame.Flakes01, frame.Flakes02, frame.Flakes03 }) do
-							if tex and tex.SetAlpha then pcall(tex.SetAlpha, tex, 0) end
-						end
-					end
-				end
-
 				-- One-time Play() hooks for default-mode cast flash / completion flare toggles.
 				-- Reads live DB config per Play() so toggling takes effect immediately.
 				-- textFillActive check prevents double-stopping with the text-fill hooks.
@@ -685,6 +598,88 @@ do
 								if c and c.hideCompletionFlare then pcall(stopFn, agRef) end
 							end
 						end)
+					end
+				end
+			end
+
+			-- Player Cast Bar: cosmetic alpha re-assertion on decorative textures.
+			-- Lives outside the `if not visualOnly` guard so combat-time visual-only
+			-- refreshes (from SetStatusBarTexture/Color hooks) re-apply SetAlpha(0).
+			-- Without this, anything that resets a glow texture's alpha mid-combat
+			-- (Blizzard re-init, profile/Edit Mode side-effect) leaves it visible
+			-- until PLAYER_REGEN_ENABLED, since the layout-guarded path defers.
+			if isPlayer then
+				local channelShadow = frame.ChannelShadow
+				if channelShadow then
+					local hideChannelingShadow = cfg.hideChannelingShadow == true
+					if channelShadow.SetAlpha then
+						pcall(channelShadow.SetAlpha, channelShadow, hideChannelingShadow and 0 or 1)
+					end
+				end
+
+				local chargeFlash = frame.ChargeFlash
+				if chargeFlash and cfg.hideChargeFlash then
+					if chargeFlash.SetAlpha then
+						pcall(chargeFlash.SetAlpha, chargeFlash, 0)
+					end
+				end
+				local shine = frame.Shine
+				if shine and cfg.hideCastShine then
+					if shine.SetAlpha then
+						pcall(shine.SetAlpha, shine, 0)
+					end
+				end
+				local wispGlow = frame.WispGlow
+				if wispGlow and cfg.hideWispGlow then
+					if wispGlow.SetAlpha then
+						pcall(wispGlow.SetAlpha, wispGlow, 0)
+					end
+				end
+				local standardGlow = frame.StandardGlow
+				if standardGlow then
+					local hide = not not cfg.hideStandardGlow
+					if standardGlow.SetAlpha then
+						pcall(standardGlow.SetAlpha, standardGlow, hide and 0 or 1)
+					end
+				end
+				local craftGlow = frame.CraftGlow
+				if craftGlow then
+					local hide = not not cfg.hideStandardGlow
+					if craftGlow.SetAlpha then
+						pcall(craftGlow.SetAlpha, craftGlow, hide and 0 or 1)
+					end
+				end
+				local sparkles01 = frame.Sparkles01
+				if sparkles01 and cfg.hideChannelSparkles then
+					if sparkles01.SetAlpha then
+						pcall(sparkles01.SetAlpha, sparkles01, 0)
+					end
+				end
+				local sparkles02 = frame.Sparkles02
+				if sparkles02 and cfg.hideChannelSparkles then
+					if sparkles02.SetAlpha then
+						pcall(sparkles02.SetAlpha, sparkles02, 0)
+					end
+				end
+				local baseGlow = frame.BaseGlow
+				if baseGlow and cfg.hideBaseGlow then
+					if baseGlow.SetAlpha then
+						pcall(baseGlow.SetAlpha, baseGlow, 0)
+					end
+				end
+
+				if cfg.hideCastFlash then
+					local flash = frame.Flash
+					if flash and flash.SetAlpha then pcall(flash.SetAlpha, flash, 0) end
+				end
+				if cfg.hideInterruptGlow then
+					local intGlow = frame.InterruptGlow
+					if intGlow and intGlow.SetAlpha then pcall(intGlow.SetAlpha, intGlow, 0) end
+				end
+
+				if cfg.hideCompletionFlare then
+					for _, tex in ipairs({ frame.EnergyGlow, frame.Flakes01, frame.Flakes02, frame.Flakes03 }) do
+						if tex and tex.SetAlpha then pcall(tex.SetAlpha, tex, 0) end
 					end
 				end
 			end
