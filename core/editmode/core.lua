@@ -921,30 +921,6 @@ function addon.EditMode.Initialize()
                             if bar then addon.BarsTextures.clearColorCache(bar) end
                         end
                     end
-                    -- Hide stale dispel clone textures (Edit Mode shows preview debuffs
-                    -- that may have been processed before our guard was active)
-                    local function hideDispelClones(bar, getStateFn)
-                        if not bar then return end
-                        local state = getStateFn and getStateFn(bar)
-                        if state and state.dispelFill then
-                            state.dispelFill:Hide()
-                            state.dispelHighlight:Hide()
-                        end
-                        local unitFrame = bar.GetParent and bar:GetParent()
-                        if unitFrame and addon._DispelColorCache then
-                            addon._DispelColorCache[unitFrame] = nil
-                        end
-                    end
-                    local pfGetState = addon.BarsPartyFrames and addon.BarsPartyFrames._getState
-                    local rfGetState = addon.BarsRaidFrames and addon.BarsRaidFrames._getState
-                    for i = 1, 5 do
-                        local bar = _G["CompactPartyFrameMember" .. i .. "HealthBar"]
-                        if bar then hideDispelClones(bar, pfGetState) end
-                    end
-                    for i = 1, 40 do
-                        local bar = _G["CompactRaidFrame" .. i .. "HealthBar"]
-                        if bar then hideDispelClones(bar, rfGetState) end
-                    end
                     -- Re-apply overlays (styleHealthOverlay → applyValueBasedColor)
                     if addon.ApplyPartyFrameHealthOverlays then
                         pcall(addon.ApplyPartyFrameHealthOverlays)

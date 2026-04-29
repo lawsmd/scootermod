@@ -421,10 +421,20 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
         local isCustom = type(textureKey) == "string" and textureKey ~= "" and textureKey ~= "default"
         local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(textureKey)
         if isCustom and resolvedPath then
-            if bar.SetStatusBarTexture then
+            -- 12.0.5 dispel-layering fix: cache the last-applied texture path
+            -- and skip the write when it hasn't changed. Each SetStatusBarTexture
+            -- call re-stamps the StatusBar in the parent CompactUnitFrame's
+            -- render queue, demoting Blizzard's PrivateAurasUI dispel highlight
+            -- beneath us. CompactUnitFrame_UpdateAll fires on every UNIT_HEALTH
+            -- and triggers applyToHealthBar with the same path almost always —
+            -- so >99% of these writes are no-ops that perturb rendering for
+            -- no reason. (Confirmed via empirical bisect 2026-04-27 — see
+            -- ../groupframes/gfhealthbar.md "Investigation Postmortem".)
+            if bar.SetStatusBarTexture and getProp(bar, "ufLastTexturePath") ~= resolvedPath then
                 setProp(bar, "ufInternalTextureWrite", true)
                 pcall(bar.SetStatusBarTexture, bar, resolvedPath)
                 setProp(bar, "ufInternalTextureWrite", nil)
+                setProp(bar, "ufLastTexturePath", resolvedPath)
             end
         end
         -- Apply initial value-based color using the unit token (unitForClass parameter)
@@ -481,11 +491,14 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
     local isCustom = type(textureKey) == "string" and textureKey ~= "" and textureKey ~= "default"
     local resolvedPath = addon.Media and addon.Media.ResolveBarTexturePath and addon.Media.ResolveBarTexturePath(textureKey)
     if isCustom and resolvedPath then
-        if bar.SetStatusBarTexture then
-            -- Mark this write so any SetStatusBarTexture hook can ignore it (avoid recursion)
+        if bar.SetStatusBarTexture and getProp(bar, "ufLastTexturePath") ~= resolvedPath then
+            -- Mark this write so any SetStatusBarTexture hook can ignore it (avoid recursion).
+            -- Cache last-applied path to skip redundant writes; see textures.lua value-mode
+            -- branch above for the dispel-layering rationale.
             setProp(bar, "ufInternalTextureWrite", true)
             pcall(bar.SetStatusBarTexture, bar, resolvedPath)
             setProp(bar, "ufInternalTextureWrite", nil)
+            setProp(bar, "ufLastTexturePath", resolvedPath)
         end
         -- Re-fetch the current texture after swapping to ensure subsequent operations target the new texture
         tex = bar:GetStatusBarTexture()
@@ -553,6 +566,7 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
                         pcall(bar.SetStatusBarTexture, bar, origAtlas)
                         setProp(bar, "ufInternalTextureWrite", nil)
                     end
+                    setProp(bar, "ufLastTexturePath", nil) -- invalidate cache: we restored to original
                 elseif origPath then
                     local treatAsAtlas = _G.C_Texture and _G.C_Texture.GetAtlasInfo and _G.C_Texture.GetAtlasInfo(origPath) ~= nil
                     if treatAsAtlas and tex and tex.SetAtlas then
@@ -562,6 +576,7 @@ function Textures.applyToBar(bar, textureKey, colorMode, tint, unitForClass, bar
                         pcall(bar.SetStatusBarTexture, bar, origPath)
                         setProp(bar, "ufInternalTextureWrite", nil)
                     end
+                    setProp(bar, "ufLastTexturePath", nil) -- invalidate cache: we restored to original
                 end
             end
             if barKind == "cast" then
