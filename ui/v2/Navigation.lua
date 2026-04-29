@@ -95,6 +95,7 @@ Navigation.NavModel = {
             { key = "qolEditMode", label = "Edit Mode" },
             { key = "qolLootVendors", label = "Loot & Vendors" },
             { key = "qolQuests", label = "Map & Quests" },
+            { key = "qolWidget", label = "Widget", module = "widget" },
         },
     },
     {

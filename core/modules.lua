@@ -46,6 +46,8 @@ local COMPONENT_TO_CATEGORY = {
     sctDamage = "sct",
     -- Tooltip
     tooltip = "tooltip",
+    -- Widget (QoL launchpad)
+    widget = "widget",
 }
 
 --- Returns the module category for a component ID.
@@ -80,6 +82,7 @@ addon.MODULE_CATEGORY_ORDER = {
     "sct",
     "tooltip",
     "unitFrames",
+    "widget",
 }
 
 addon.MODULE_CATEGORIES = {
@@ -165,6 +168,9 @@ addon.MODULE_CATEGORIES = {
     },
     tooltip = {
         label = "Tooltip",
+    },
+    widget = {
+        label = "Widget",
     },
     unitFrames = {
         label = "Unit Frames",

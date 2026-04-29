@@ -135,6 +135,7 @@ core/components/minimap/overlay.lua
 core/components/tooltip.lua
 core/components/notes.lua
 core/qol.lua
+core/components/widget/core.lua
 core/components/objectivetracker.lua
 ## Damage Meters X (Native — reskins Blizzard's built-in meter)
 core/components/damagemetersX/core.lua
@@ -162,6 +163,7 @@ core/debug/inspector.lua
 core/debug/misc.lua
 core/debug/cdmlayers.lua
 core/debug/dmY.lua
+core/debug/widget.lua
 core/taintdebug.lua
 core/dialogs.lua
 core/importexport.lua
@@ -233,6 +235,7 @@ ui/v2/settings/bosswarnings/BossBarsRenderer.lua
 ui/v2/settings/qol/EditModeRenderer.lua
 ui/v2/settings/qol/LootVendorsRenderer.lua
 ui/v2/settings/qol/QuestsRenderer.lua
+ui/v2/settings/qol/WidgetRenderer.lua
 ui/v2/settings/profiles/ManageRenderer.lua
 ui/v2/settings/profiles/PresetsRenderer.lua
 ui/v2/settings/profiles/RulesRenderer.lua

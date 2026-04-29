@@ -227,6 +227,7 @@ function addon:GetDefaults()
                 sct = false,
                 tooltip = false,
                 unitFrames = false,
+                widget = false,
             },
             groupFrames = {
                 raid = {

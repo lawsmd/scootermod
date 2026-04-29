@@ -146,6 +146,36 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("  /scoot debug dmY fields")
             addon:Print("  /scoot debug dmY drilldown")
             addon:Print("  /scoot debug dmY multicol")
+            addon:Print("  /scoot debug widget <spawnchild|releaseall|state>")
+            return
+        end
+
+        if sub1 == "widget" then
+            if sub2 == "spawnchild" then
+                if addon.DebugWidgetSpawnChild then
+                    addon.DebugWidgetSpawnChild()
+                else
+                    addon:Print("Widget debug not loaded.")
+                end
+                return
+            end
+            if sub2 == "releaseall" then
+                if addon.DebugWidgetReleaseAll then
+                    addon.DebugWidgetReleaseAll()
+                else
+                    addon:Print("Widget debug not loaded.")
+                end
+                return
+            end
+            if sub2 == "state" or sub2 == "" then
+                if addon.DebugWidgetState then
+                    addon.DebugWidgetState()
+                else
+                    addon:Print("Widget debug not loaded.")
+                end
+                return
+            end
+            addon:Print("Usage: /scoot debug widget <spawnchild|releaseall|state>")
             return
         end
 
@@ -487,6 +517,31 @@ function SlashCmdList.SCOOT(msg, editBox)
         else
             addon:Print("Taint debug module not loaded.")
         end
+        return
+    end
+
+    -- /scoot widget <reset|state>
+    if cmd == "widget" then
+        local sub = string.lower(args[2] or "")
+        if sub == "reset" then
+            if addon.Widget and addon.Widget.ResetPosition then
+                addon.Widget:ResetPosition()
+                addon:Print("Widget position reset.")
+            else
+                addon:Print("Widget module not loaded.")
+            end
+            return
+        end
+        if sub == "state" then
+            if addon.DebugWidgetState then
+                addon.DebugWidgetState()
+            else
+                addon:Print("Widget debug not loaded.")
+            end
+            return
+        end
+        addon:Print("Usage: /scoot widget reset")
+        addon:Print("       /scoot widget state")
         return
     end
 
