@@ -924,6 +924,19 @@ function UIPanel:CreateContentPane()
     homeAscii:SetTextColor(ar, ag, ab, 1)
     homeAscii:SetPoint("CENTER", homeContainer, "CENTER", 0, 0)
 
+    local versionText = homeContainer:CreateFontString(nil, "OVERLAY")
+    versionText:SetFont(labelFont2, 13, "")
+    versionText:SetTextColor(0.2, 0.9, 0.3, 1)
+    do
+        local ver
+        if C_AddOns and C_AddOns.GetAddOnMetadata then
+            local ok, v = pcall(C_AddOns.GetAddOnMetadata, addonName, "Version")
+            if ok and v then ver = v end
+        end
+        versionText:SetText("v" .. (ver or "?.?.?"))
+    end
+    versionText:SetPoint("BOTTOMLEFT", homeAscii, "BOTTOMRIGHT", -2, 0)
+
     local homeMascot = homeContainer:CreateFontString(nil, "OVERLAY")
     homeMascot:SetFont(labelFont2, 6, "")  -- Shrunk from 7.5pt
     homeMascot:SetText(ASCII_MASCOT)
@@ -1036,6 +1049,7 @@ function UIPanel:CreateContentPane()
     homeContent._welcomeText = welcomeText
     homeContent._asciiLogo = homeAscii
     homeContent._asciiMascot = homeMascot
+    homeContent._versionText = versionText
     contentPane._homeContent = homeContent
 
     Theme:Subscribe("UIPanel_HomeContent", function(r, g, b)
