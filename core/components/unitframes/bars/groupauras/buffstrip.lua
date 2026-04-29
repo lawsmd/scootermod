@@ -292,8 +292,28 @@ end
 -- Per-frame refresh
 --------------------------------------------------------------------------------
 
+local function IsEditModeOpen()
+    -- Primary: Scoot's EventRegistry-driven flag.
+    if addon.EditMode and addon.EditMode.IsEditModeActiveOrOpening
+       and addon.EditMode.IsEditModeActiveOrOpening() then
+        return true
+    end
+    -- Fallback: ask Blizzard directly. Covers cases where EventRegistry
+    -- callbacks lag or don't fire (observed under 12.0.5).
+    local mgr = _G.EditModeManagerFrame
+    if mgr then
+        local ok, shown = pcall(mgr.IsShown, mgr)
+        if ok and shown == true then return true end
+    end
+    return false
+end
+
 function HA.RefreshOverlaysForFrame(frame, unit)
     if not frame then return end
+    -- Edit Mode gate: don't render replacement overlays while the user is in
+    -- (or transitioning into/out of) Blizzard's Edit Mode. Mirrors the same
+    -- guard applied to the custom-icon pipeline in core.lua's UpdateAurasForFrame.
+    if IsEditModeOpen() then return end
     local style = GetReplacementStyle()
     local actives = activeOverlays[frame]
 
@@ -396,6 +416,14 @@ function HA.ReleaseOverlaysForFrame(frame)
     activeOverlays[frame] = nil
 end
 
+-- Wipe overlays across every tracked frame. Used on Edit Mode entry so any
+-- previously-rendered replacement overlays disappear cleanly during layout edit.
+function HA.ReleaseAllOverlays()
+    for frame in pairs(activeOverlays) do
+        HA.ReleaseOverlaysForFrame(frame)
+    end
+end
+
 -- Style-changed refresh: iterate known tracked frames, re-render each. Called by
 -- AuraTrackingRenderer set() hooks when the user changes replacementStyle or
 -- positionGroupSpacing. Safe OOC (pool expansion) and in combat (uses pre-alloc
@@ -420,3 +448,42 @@ initFrame:SetScript("OnEvent", function(self)
     PreallocateOverlayPool()
     self:UnregisterAllEvents()
 end)
+
+-- Edit Mode lifecycle hooks: clear overlays on entry, restore them on exit.
+-- Hook the EditModeManagerFrame's OnShow/OnHide directly — this is the same
+-- pattern nudgearrows.lua uses and fires reliably regardless of whether
+-- the EventRegistry "EditMode.Enter"/"EditMode.Exit" callbacks dispatch.
+local function InstallEditModeLifecycleHooks()
+    local mgr = _G.EditModeManagerFrame
+    if not mgr or HA._editModeHooksInstalled then return end
+    HA._editModeHooksInstalled = true
+
+    mgr:HookScript("OnShow", function()
+        HA.ReleaseAllOverlays()
+    end)
+
+    mgr:HookScript("OnHide", function()
+        -- MarkExitingEditMode keeps the transition flag true for ~1s. Release
+        -- any orphaned overlays now (covers preview frames anchored to hidden
+        -- frames), then defer the repaint past the transition window so the
+        -- function-level guard doesn't block it.
+        HA.ReleaseAllOverlays()
+        C_Timer.After(1.05, function()
+            if InCombatLockdown() then return end
+            if HA.RefreshAllAuraDisplays then HA.RefreshAllAuraDisplays() end
+        end)
+    end)
+end
+
+if _G.EditModeManagerFrame then
+    InstallEditModeLifecycleHooks()
+else
+    local hookFrame = CreateFrame("Frame")
+    hookFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    hookFrame:SetScript("OnEvent", function(self)
+        if _G.EditModeManagerFrame then
+            InstallEditModeLifecycleHooks()
+            self:UnregisterAllEvents()
+        end
+    end)
+end
