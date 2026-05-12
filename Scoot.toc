@@ -136,6 +136,9 @@ core/components/tooltip.lua
 core/components/notes.lua
 core/qol.lua
 core/components/widget/core.lua
+core/components/dungeonjournal/core.lua
+core/components/dungeonjournal/season.lua
+core/components/dungeonjournal/overlay.lua
 core/components/objectivetracker.lua
 ## Damage Meters X (Native — reskins Blizzard's built-in meter)
 core/components/damagemetersX/core.lua
@@ -236,6 +239,7 @@ ui/v2/settings/qol/EditModeRenderer.lua
 ui/v2/settings/qol/LootVendorsRenderer.lua
 ui/v2/settings/qol/QuestsRenderer.lua
 ui/v2/settings/qol/WidgetRenderer.lua
+ui/v2/settings/qol/DungeonJournalRenderer.lua
 ui/v2/settings/profiles/ManageRenderer.lua
 ui/v2/settings/profiles/PresetsRenderer.lua
 ui/v2/settings/profiles/RulesRenderer.lua

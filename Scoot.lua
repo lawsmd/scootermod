@@ -520,6 +520,42 @@ function SlashCmdList.SCOOT(msg, editBox)
         return
     end
 
+    -- /scoot dj debug — Dungeon Journal diagnostics
+    if cmd == "dj" then
+        local sub = string.lower(args[2] or "")
+        local DJ = addon.DungeonJournal
+        if sub == "debug" then
+            if not DJ then addon:Print("Dungeon Journal module not loaded.") return end
+            addon:Print(string.format("DJ enabled: %s", tostring(DJ.IsEnabled and DJ.IsEnabled())))
+            local ej = _G.EncounterJournal
+            local instanceID = ej and rawget(ej, "instanceID") or nil
+            addon:Print(string.format("EJ.instanceID: %s", tostring(instanceID)))
+            if type(instanceID) == "number" and EJ_GetInstanceInfo then
+                local ok, name, _, _, _, _, _, dungeonAreaMapID = pcall(EJ_GetInstanceInfo, instanceID)
+                if ok then
+                    addon:Print(string.format("  name=%s  dungeonAreaMapID=%s",
+                        tostring(name), tostring(dungeonAreaMapID)))
+                end
+                addon:Print(string.format("  IsCurrentSeasonInstance: %s",
+                    tostring(DJ.IsCurrentSeasonInstance and DJ.IsCurrentSeasonInstance(instanceID))))
+            end
+            local s = DJ._SeasonDebug and DJ._SeasonDebug() or {}
+            addon:Print(string.format("Snapshot: have=%s  requested=%s",
+                tostring(s.haveSnapshot), tostring(s.requestedOnce)))
+            local nameCount = 0
+            for n in pairs(s.seasonNames or {}) do
+                nameCount = nameCount + 1
+                addon:Print(string.format("  season name: %s", n))
+            end
+            addon:Print(string.format("  total season names: %d", nameCount))
+            addon:Print(string.format("Marks on this character: %d",
+                (DJ.CountMarks and DJ.CountMarks()) or 0))
+            return
+        end
+        addon:Print("Usage: /scoot dj debug")
+        return
+    end
+
     -- /scoot widget <reset|state>
     if cmd == "widget" then
         local sub = string.lower(args[2] or "")

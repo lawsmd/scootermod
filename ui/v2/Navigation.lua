@@ -96,6 +96,7 @@ Navigation.NavModel = {
             { key = "qolLootVendors", label = "Loot & Vendors" },
             { key = "qolQuests", label = "Map & Quests" },
             { key = "qolWidget", label = "Widget", module = "widget" },
+            { key = "qolDungeonJournal", label = "Dungeon Journal" },
         },
     },
     {
