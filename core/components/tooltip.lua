@@ -22,6 +22,12 @@ local addonName, addon = ...
 -- - Font face (family)
 -- - Font size
 -- - Font style (OUTLINE, THICKOUTLINE, etc.)
+--
+-- LFG / Premade Groups search-entry tooltip:
+-- The tooltip shown when hovering a Premade Groups search result is also styled by
+-- the Title + Body Text controls. That tooltip reuses GameTooltip but is populated
+-- via direct GameTooltip:AddLine() calls inside LFGListUtil_SetSearchEntryTooltip,
+-- bypassing TooltipDataProcessor — so we hook that builder separately.
 
 local COMPARISON_TOOLTIP_NAMES = {
     ShoppingTooltip1 = true,
@@ -258,6 +264,60 @@ local function RegisterTooltipPostProcessor()
     end)
 
     return true
+end
+
+--------------------------------------------------------------------------------
+-- Direct hooks for tooltips that bypass TooltipDataProcessor
+--------------------------------------------------------------------------------
+
+-- LFG Premade Groups search-entry tooltip is built via direct GameTooltip:AddLine()
+-- calls inside LFGListUtil_SetSearchEntryTooltip — it never flows through
+-- TooltipDataProcessor, so the AllTypes post-call hook never fires for it. Hook
+-- the builder directly to re-run the existing Title/Body styling pipeline.
+local directTooltipHooked = false
+local directHookListenerFrame
+
+local function ApplyStylingForDirectGameTooltip()
+    local comp = addon.Components and addon.Components.tooltip
+    if not comp or not comp.db then return end
+    local db = comp.db
+    ApplyGameTooltipText(db)
+    ApplyBorderTint(GameTooltip, db)
+end
+
+local function InstallLFGSearchEntryHook()
+    if type(_G.LFGListUtil_SetSearchEntryTooltip) ~= "function" then
+        return false
+    end
+    local ok = pcall(hooksecurefunc, "LFGListUtil_SetSearchEntryTooltip", function()
+        ApplyStylingForDirectGameTooltip()
+    end)
+    return ok
+end
+
+local function RegisterDirectTooltipHooks()
+    if directTooltipHooked then return end
+
+    if InstallLFGSearchEntryHook() then
+        directTooltipHooked = true
+        return
+    end
+
+    -- Blizzard_GroupFinder is on-demand loaded the first time the LFG UI opens.
+    -- Wait for it via ADDON_LOADED, then install the hook.
+    if not directHookListenerFrame then
+        directHookListenerFrame = CreateFrame("Frame")
+        directHookListenerFrame:RegisterEvent("ADDON_LOADED")
+        directHookListenerFrame:SetScript("OnEvent", function(self, _, loadedAddon)
+            if loadedAddon == "Blizzard_GroupFinder" then
+                if InstallLFGSearchEntryHook() then
+                    directTooltipHooked = true
+                    self:UnregisterEvent("ADDON_LOADED")
+                    self:SetScript("OnEvent", nil)
+                end
+            end
+        end)
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -523,6 +583,10 @@ local function ApplyTooltipStyling(self)
 
     -- Ensure TooltipDataProcessor hook is registered
     RegisterTooltipPostProcessor()
+
+    -- Ensure direct (non-TooltipDataProcessor) hooks are registered — e.g. the
+    -- LFG Premade Groups search-entry tooltip, which bypasses TooltipDataProcessor.
+    RegisterDirectTooltipHooks()
 
     -- Initialize tooltip ID system (lazy, one-time)
     InitTooltipIDs()
