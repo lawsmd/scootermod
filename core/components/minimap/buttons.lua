@@ -31,17 +31,54 @@ local mailEventFrame = nil
 -- Addon Button Container
 --------------------------------------------------------------------------------
 
--- Collect all minimap addon buttons (LibDBIcon only to avoid duplicates)
-local function CollectMinimapAddonButtons()
-    local buttons = {}
+-- Blizzard-owned children of Minimap that must never be aggregated.
+local BLIZZ_MINIMAP_CHILDREN = {
+    MinimapZoomIn = true, MinimapZoomOut = true, MinimapBackdrop = true,
+    MinimapCompassTexture = true, MinimapNorthTag = true, MinimapPing = true,
+    MinimapZoneTextButton = true, MiniMapMailFrame = true, MiniMapMailIcon = true,
+    MiniMapTracking = true, MiniMapTrackingFrame = true, MinimapTrackingButton = true,
+    GameTimeFrame = true, QueueStatusButton = true, QueueStatusFrame = true,
+    TimeManagerClockButton = true, GarrisonLandingPageMinimapButton = true,
+    ExpansionLandingPageMinimapButton = true, MiniMapInstanceDifficulty = true,
+    GuildInstanceDifficulty = true, MiniMapVoiceChatFrame = true,
+    MiniMapWorldMapButton = true,
+}
 
-    -- Use LibDBIcon only (covers virtually all minimap addon buttons)
-    -- Removing Minimap children scan eliminates duplicate detection bugs
+-- Collect all minimap addon buttons.
+-- Two passes: LibDBIcon registry, then Minimap children (for addons that roll
+-- their own button without using LibDBIcon, e.g. AutomaticRoleCheck). The
+-- `seen` set de-duplicates by frame identity, which was the original duplicate
+-- bug — LibDBIcon parents its buttons to Minimap, so a naive children scan saw
+-- the same frame twice.
+local function CollectMinimapAddonButtons()
+    local buttons, seen = {}, {}
+
     local LibDBIcon = LibStub and LibStub("LibDBIcon-1.0", true)
     if LibDBIcon and LibDBIcon.objects then
         for name, button in pairs(LibDBIcon.objects) do
             if button and button:IsObjectType("Button") then
                 buttons[name] = { button = button, name = name }
+                seen[button] = true
+            end
+        end
+    end
+
+    if Minimap and Minimap.GetChildren then
+        for _, child in ipairs({ Minimap:GetChildren() }) do
+            if child and child.IsObjectType and child:IsObjectType("Button") and not seen[child] then
+                local name = child.GetName and child:GetName()
+                local w, h = child:GetWidth() or 0, child:GetHeight() or 0
+                -- Skip world-map pin frames (HandyNotes, HereBeDragons, etc.): typically
+                -- <16px and named like FooPin1, FooPin2. Real addon buttons are 24-32px.
+                if name
+                    and w >= 20 and h >= 20
+                    and not BLIZZ_MINIMAP_CHILDREN[name]
+                    and not name:find("^Scoot")
+                    and not name:find("Pin%d+$")
+                then
+                    buttons[name] = { button = child, name = name }
+                    seen[child] = true
+                end
             end
         end
     end
@@ -78,32 +115,52 @@ local function FindButtonBorderTexture(button)
     end
 end
 
--- Get the icon texture from an addon button
+-- Texture paths used as the dark/blank minimap-button backdrop disc — must be
+-- rejected when sniffing for the real icon.
+local BACKDROP_TEXTURE_PATTERNS = {
+    "UI%-Minimap%-Background",
+    "MiniMap%-TrackingBorder",
+    "MiniMap%-TrackingBackground",
+}
+
+local function isBackdropTexture(path)
+    if type(path) ~= "string" then return false end
+    for _, pat in ipairs(BACKDROP_TEXTURE_PATTERNS) do
+        if path:find(pat) then return true end
+    end
+    return false
+end
+
+-- Get the icon texture from an addon button. Prefers ARTWORK > BORDER > BACKGROUND
+-- so we get the actual addon icon and not the dark minimap backdrop disc that
+-- some addons (e.g. AutomaticRoleCheck) layer underneath their icon.
 local function GetButtonIconTexture(button)
     if not button then return nil end
 
     -- Check for icon child frame first (LibDBIcon pattern)
-    if button.icon then
-        if button.icon:IsObjectType("Texture") then
-            return button.icon:GetTexture()
-        end
+    if button.icon and button.icon:IsObjectType("Texture") then
+        local tex = button.icon:GetTexture()
+        if tex and not isBackdropTexture(tex) then return tex end
     end
 
-    -- Look for the icon texture in regions (usually BACKGROUND layer, smaller than border)
-    local regions = { button:GetRegions() }
-    for _, region in ipairs(regions) do
+    local layerPriority = { ARTWORK = 1, BORDER = 2, BACKGROUND = 3 }
+    local best, bestRank
+    for _, region in ipairs({ button:GetRegions() }) do
         if region:IsObjectType("Texture") then
             local layer = region:GetDrawLayer()
             local w, h = region:GetSize()
-            -- Icon textures are typically smaller than border (which is 50x50)
             if w and h and w < 45 and h < 45 and layer ~= "OVERLAY" then
                 local tex = region:GetTexture()
-                if tex then
-                    return tex
+                if tex and not isBackdropTexture(tex) then
+                    local rank = layerPriority[layer] or 99
+                    if not bestRank or rank < bestRank then
+                        best, bestRank = tex, rank
+                    end
                 end
             end
         end
     end
+    return best
 end
 
 -- Create the container button (shown on minimap)
