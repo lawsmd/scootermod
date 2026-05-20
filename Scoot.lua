@@ -145,6 +145,7 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("  /scoot debug dmY api")
             addon:Print("  /scoot debug dmY fields")
             addon:Print("  /scoot debug dmY drilldown")
+            addon:Print("  /scoot debug dmY drilldata")
             addon:Print("  /scoot debug dmY multicol")
             addon:Print("  /scoot debug widget <spawnchild|releaseall|state>")
             return
@@ -447,7 +448,7 @@ function SlashCmdList.SCOOT(msg, editBox)
 
         -- /scoot debug dmY cvar
         -- /scoot debug dmY api
-        if sub1 == "dmY" then
+        if sub1 == "dmy" then
             if sub2 == "cvar" then
                 if addon.DebugDMYCVar then addon.DebugDMYCVar()
                 else addon:Print("DMY debug not available.") end
@@ -473,6 +474,11 @@ function SlashCmdList.SCOOT(msg, editBox)
                 else addon:Print("DMY debug not available.") end
                 return
             end
+            if sub2 == "drilldata" then
+                if addon.DebugDMYDrilldata then addon.DebugDMYDrilldata()
+                else addon:Print("DMY debug not available.") end
+                return
+            end
             if sub2 == "multicol" then
                 if addon.DebugDMYMulticol then addon.DebugDMYMulticol()
                 else addon:Print("DMY debug not available.") end
@@ -483,6 +489,7 @@ function SlashCmdList.SCOOT(msg, editBox)
             addon:Print("       /scoot debug dmY trace")
             addon:Print("       /scoot debug dmY fields")
             addon:Print("       /scoot debug dmY drilldown")
+            addon:Print("       /scoot debug dmY drilldata")
             addon:Print("       /scoot debug dmY multicol")
             return
         end

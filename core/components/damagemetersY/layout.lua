@@ -151,6 +151,29 @@ function DMY._LayoutBarRows(windowIndex, comp)
 
     local barMode = db.barMode or "default"
 
+    -- Position per-column click overlays (multi-column drill-down dispatch).
+    -- Hidden for single-column windows; row's OnMouseUp handles those.
+    local function LayoutColClickRegions(row)
+        if not row.colClickRegions then return end
+        for c = 1, DMY.MAX_COLUMNS do
+            local btn = row.colClickRegions[c]
+            if not btn then break end
+            if numColumns >= 2 and c <= numColumns then
+                local rightEdge = fw - (numColumns - c) * colWidth
+                local leftEdge  = rightEdge - colWidth
+                if c == 1 and leftEdge < barLeftOffset then leftEdge = barLeftOffset end
+                btn:ClearAllPoints()
+                btn:SetPoint("LEFT",  row, "LEFT", leftEdge,  0)
+                btn:SetPoint("RIGHT", row, "LEFT", rightEdge, 0)
+                btn:SetPoint("TOP",    row, "TOP",    0, 0)
+                btn:SetPoint("BOTTOM", row, "BOTTOM", 0, 0)
+                btn:Show()
+            else
+                btn:Hide()
+            end
+        end
+    end
+
     for r = 1, DMY.MAX_POOL do
         local row = win.barRows[r]
         row:SetHeight(barHeight)
@@ -166,6 +189,7 @@ function DMY._LayoutBarRows(windowIndex, comp)
 
         -- Position value texts at column offsets
         LayoutRowValueTexts(row)
+        LayoutColClickRegions(row)
     end
 
     -- Layout pinned row
@@ -176,6 +200,7 @@ function DMY._LayoutBarRows(windowIndex, comp)
     if pinnedRow.nameContainer then pinnedRow.nameContainer:SetHeight(barHeight) end
     DMY._ApplyBarMode(pinnedRow, barMode, barLeftOffset)
     LayoutRowValueTexts(pinnedRow)
+    LayoutColClickRegions(pinnedRow)
 
     -- Adjust scroll area bottom to leave room for pinned row
     local showPinned = db.showLocalPlayer ~= false
@@ -284,6 +309,18 @@ end
 function DMY._PopulateBarRow(row, player, key, cfg, merged, numColumns, inCombat)
     local comp = DMY._comp
     local db = comp and comp.db
+
+    -- Persist source identity for drill-down click handler.
+    -- OOC: key IS the GUID. Combat: key is "rank_N" placeholder (real GUID is secret).
+    if inCombat then
+        row._sourceGUID = nil
+    else
+        row._sourceGUID = (key and not tostring(key):find("^rank_")) and key or nil
+    end
+    row._sourceName = player.name -- may be secret in combat; consumer must handle
+    row._classFilename = player.classFilename
+    row._identityKey = player.identityKey
+    row._sourceCreatureID = nil -- not currently captured in merged data; nil OK for player sources
 
     -- Name display (SetText accepts secrets during combat)
     row.nameText:SetText(player.name or "")

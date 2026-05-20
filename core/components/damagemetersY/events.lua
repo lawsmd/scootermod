@@ -15,6 +15,7 @@ local function OnEvent(self, event, ...)
 
     if event == "DAMAGE_METER_RESET" then
         resetPending = true
+        if DMY._CloseDrilldown then DMY._CloseDrilldown() end
     end
 
     -- Combat ended: immediate synchronous full refresh
@@ -24,6 +25,9 @@ local function OnEvent(self, event, ...)
         DMY._FullRefreshAllWindows()
         if DMY._comp then
             DMY._RefreshOpacity(DMY._comp)
+        end
+        if DMY._OnCombatEnd_RefreshDrilldown then
+            DMY._OnCombatEnd_RefreshDrilldown()
         end
         return
     end

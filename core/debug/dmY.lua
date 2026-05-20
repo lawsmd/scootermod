@@ -1432,3 +1432,217 @@ function addon.DebugDMYMulticol()
         addon.DebugShowWindow("DMY Multi-Column Live Combat Test", output)
     end
 end
+
+--------------------------------------------------------------------------------
+-- /scoot debug dmY drilldata — §24 Tests 11-13: drill-down data shape
+-- Purpose: confirm combatSpellDetails contents per metric type, AoE aggregation
+-- behavior, and isAvoidable/isDeadly accuracy on DamageTaken metrics.
+--
+-- Runs OOC only — the source API is OOC-only for tainted callers.
+--------------------------------------------------------------------------------
+
+local DRILLDATA_DETAIL_FIELDS = {
+    "unitName", "unitClassFilename", "classification",
+    "isPet", "isMob", "amount", "specIconID",
+}
+
+local function DumpSpellDetails(lines, details, indent)
+    if not details then
+        table.insert(lines, indent .. "(combatSpellDetails: nil)")
+        return
+    end
+    for _, fname in ipairs(DRILLDATA_DETAIL_FIELDS) do
+        local val = details[fname]
+        local sec = TestSecret(val)
+        table.insert(lines, string.format("%s%-20s type=%-8s issecret=%-8s value=%s",
+            indent, fname .. ":", type(val), FormatSecretResult(sec),
+            FormatSafeValue(val, sec)))
+    end
+end
+
+local function CountSpellAggregation(spells)
+    local seen, total, dups = {}, 0, 0
+    for _, s in ipairs(spells) do
+        total = total + 1
+        local id = s.spellID
+        if id ~= nil then
+            if seen[id] then dups = dups + 1
+            else seen[id] = true end
+        end
+    end
+    local unique = 0
+    for _ in pairs(seen) do unique = unique + 1 end
+    return total, unique, dups
+end
+
+local function CountFlaggedTrue(spells, fieldName)
+    local count, errored = 0, false
+    for _, s in ipairs(spells) do
+        local ok, val = pcall(function() return s[fieldName] end)
+        if not ok then
+            errored = true
+        elseif val == true then
+            count = count + 1
+        end
+    end
+    return count, errored
+end
+
+local function RunOneMetric(lines, label, meterType, hasAvoidableInfo)
+    table.insert(lines, "============================================================")
+    table.insert(lines, "Metric: " .. label)
+    table.insert(lines, "============================================================")
+
+    if not meterType then
+        table.insert(lines, "  ENUM not present in this build, skipping.")
+        table.insert(lines, "")
+        return
+    end
+
+    local ok, session = pcall(C_DamageMeter.GetCombatSessionFromType,
+        Enum.DamageMeterSessionType.Overall, meterType)
+    if not ok or not session or not session.combatSources or #session.combatSources == 0 then
+        table.insert(lines, "  No data for this metric (no combat sources).")
+        table.insert(lines, "")
+        return
+    end
+
+    local src = session.combatSources[1]
+    if not src.sourceGUID then
+        table.insert(lines, "  First source has no sourceGUID.")
+        table.insert(lines, "")
+        return
+    end
+
+    table.insert(lines, string.format("  Querying source: %s (%s)  GUID=%s",
+        tostring(src.name), tostring(src.classFilename), tostring(src.sourceGUID)))
+
+    local okSrc, srcResult = pcall(C_DamageMeter.GetCombatSessionSourceFromType,
+        Enum.DamageMeterSessionType.Overall, meterType,
+        src.sourceGUID, src.sourceCreatureID)
+    if not okSrc then
+        table.insert(lines, "  Source API pcall failed: " .. tostring(srcResult))
+        table.insert(lines, "")
+        return
+    end
+    if not srcResult then
+        table.insert(lines, "  Source API returned nil.")
+        table.insert(lines, "")
+        return
+    end
+
+    local spells = srcResult.combatSpells
+    if not spells or #spells == 0 then
+        table.insert(lines, "  combatSpells: empty")
+        table.insert(lines, "")
+        return
+    end
+
+    table.insert(lines, string.format("  Session: maxAmount=%s totalAmount=%s",
+        tostring(srcResult.maxAmount), tostring(srcResult.totalAmount)))
+    table.insert(lines, "")
+
+    -- Test 12: AoE aggregation
+    local total, unique, dups = CountSpellAggregation(spells)
+    table.insert(lines, "  Test 12 — AoE aggregation:")
+    table.insert(lines, string.format("    Total entries: %d  Unique spellIDs: %d  Duplicates: %d",
+        total, unique, dups))
+    if dups > 0 then
+        table.insert(lines, "    -> ONE ENTRY PER TARGET (engine creates a separate entry per hit target)")
+    else
+        table.insert(lines, "    -> AGGREGATED (one entry per spellID; combatSpellDetails holds primary target)")
+    end
+    table.insert(lines, "")
+
+    -- Test 13 (DamageTaken-family only): isAvoidable / isDeadly counts
+    if hasAvoidableInfo then
+        table.insert(lines, "  Test 13 — Avoidable/Deadly flags:")
+        local avoidable, errA = CountFlaggedTrue(spells, "isAvoidable")
+        local deadly, errD = CountFlaggedTrue(spells, "isDeadly")
+        if errA then
+            table.insert(lines, "    isAvoidable inspection errored (likely secret in this context)")
+        else
+            table.insert(lines, string.format("    isAvoidable=true: %d / %d", avoidable, total))
+        end
+        if errD then
+            table.insert(lines, "    isDeadly inspection errored (likely secret in this context)")
+        else
+            table.insert(lines, string.format("    isDeadly=true:    %d / %d", deadly, total))
+        end
+        table.insert(lines, "")
+    end
+
+    -- Test 11: combatSpellDetails contents (first 3 spells)
+    local showCount = math.min(3, #spells)
+    table.insert(lines, string.format("  Test 11 — combatSpellDetails (first %d spells):", showCount))
+    for i = 1, showCount do
+        local spell = spells[i]
+        local spellName = "?"
+        if spell.spellID and C_Spell and C_Spell.GetSpellName then
+            local okN, nm = pcall(C_Spell.GetSpellName, spell.spellID)
+            if okN and nm and nm ~= "" then spellName = nm end
+        end
+        table.insert(lines, string.format("    Spell %d: id=%s name=%s totalAmount=%s amountPerSecond=%s",
+            i, tostring(spell.spellID), spellName,
+            tostring(spell.totalAmount), tostring(spell.amountPerSecond)))
+        local creatureName = spell.creatureName
+        if creatureName ~= nil and creatureName ~= "" then
+            table.insert(lines, string.format("      creatureName: '%s' (pet attribution)", tostring(creatureName)))
+        end
+        table.insert(lines, string.format("      overkillAmount=%s isAvoidable=%s isDeadly=%s",
+            tostring(spell.overkillAmount), tostring(spell.isAvoidable), tostring(spell.isDeadly)))
+        DumpSpellDetails(lines, spell.combatSpellDetails, "      ")
+        table.insert(lines, "")
+    end
+end
+
+local function RunDrilldataTest()
+    local lines = { "== DMY Drill-Down Data Shape Test (Section 24 Tests 11-13) ==" }
+
+    if InCombatLockdown() then
+        table.insert(lines, "ERROR: This test must be run OUT OF COMBAT.")
+        table.insert(lines, "  The source API is OOC-only for tainted (addon) callers.")
+        table.insert(lines, "  Re-run after combat ends.")
+        return lines
+    end
+
+    if not (C_DamageMeter and C_DamageMeter.GetCombatSessionSourceFromType) then
+        table.insert(lines, "ERROR: C_DamageMeter source API not available.")
+        return lines
+    end
+
+    table.insert(lines, "Run context: OUT OF COMBAT")
+    table.insert(lines, "Iterating relevant meter types and dumping per-spell shape.")
+    table.insert(lines, "")
+
+    local M = Enum.DamageMeterType or {}
+    local metrics = {
+        { label = "DamageDone",           type = M.DamageDone,           avoidable = false },
+        { label = "HealingDone",          type = M.HealingDone,          avoidable = false },
+        { label = "DamageTaken",          type = M.DamageTaken,          avoidable = true  },
+        { label = "AvoidableDamageTaken", type = M.AvoidableDamageTaken, avoidable = true  },
+        { label = "Interrupts",           type = M.Interrupts,           avoidable = false },
+        { label = "Dispels",              type = M.Dispels,              avoidable = false },
+        { label = "EnemyDamageTaken",     type = M.EnemyDamageTaken,     avoidable = false },
+    }
+
+    for _, m in ipairs(metrics) do
+        RunOneMetric(lines, m.label, m.type, m.avoidable)
+    end
+
+    table.insert(lines, "============================================================")
+    table.insert(lines, "DONE — review combatSpellDetails per metric.")
+    table.insert(lines, "")
+    table.insert(lines, "What to confirm by reading the output:")
+    table.insert(lines, "  - Test 11: For each metric, what does combatSpellDetails.unitName")
+    table.insert(lines, "    actually contain? (target name? attacker name? empty?)")
+    table.insert(lines, "  - Test 12: AoE behavior — one entry per target, or aggregated?")
+    table.insert(lines, "  - Test 13: For DamageTaken/AvoidableDamageTaken, do isAvoidable")
+    table.insert(lines, "    and isDeadly counts match expectations from your last fight?")
+    return lines
+end
+
+function addon.DebugDMYDrilldata()
+    local lines = RunDrilldataTest()
+    addon.DebugShowWindow("DMY Drill-Down Data Shape Test", table.concat(lines, "\n"))
+end

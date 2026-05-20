@@ -269,6 +269,7 @@ end
 --------------------------------------------------------------------------------
 
 function DMY._HandleReset()
+    if DMY._CloseDrilldown then DMY._CloseDrilldown() end
     for i = 1, DMY.MAX_WINDOWS do
         local win = DMY._windows[i]
         if win then

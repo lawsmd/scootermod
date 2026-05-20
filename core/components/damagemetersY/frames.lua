@@ -74,8 +74,14 @@ function DMY._CreateFlyoutMenu(menuWidth)
     -- Row pool and divider pool
     menu._rows = {}
     menu._dividers = {}
+    menu._headerBars = {}
+    menu._spellRows = {}
+    menu._placeholderTexts = {}
     menu._rowCount = 0
     menu._dividerCount = 0
+    menu._headerBarCount = 0
+    menu._spellRowCount = 0
+    menu._placeholderTextCount = 0
     menu._yOff = -6
 
     function menu:Clear()
@@ -85,8 +91,20 @@ function DMY._CreateFlyoutMenu(menuWidth)
         for i = 1, self._dividerCount do
             self._dividers[i]:Hide()
         end
+        for i = 1, self._headerBarCount do
+            self._headerBars[i]:Hide()
+        end
+        for i = 1, self._spellRowCount do
+            self._spellRows[i]:Hide()
+        end
+        for i = 1, self._placeholderTextCount do
+            self._placeholderTexts[i]:Hide()
+        end
         self._rowCount = 0
         self._dividerCount = 0
+        self._headerBarCount = 0
+        self._spellRowCount = 0
+        self._placeholderTextCount = 0
         self._yOff = -6
     end
 
@@ -155,6 +173,171 @@ function DMY._CreateFlyoutMenu(menuWidth)
         self._yOff = self._yOff - 7
     end
 
+    -- Header bar: title text (left) + close X button (right).
+    function menu:AddHeaderBar(titleText, titleColor, onCloseClick)
+        self._headerBarCount = self._headerBarCount + 1
+        local idx = self._headerBarCount
+        local bar = self._headerBars[idx]
+        if not bar then
+            bar = CreateFrame("Frame", nil, self)
+            bar:SetSize(menuWidth - 8, 26)
+            local bg = bar:CreateTexture(nil, "BACKGROUND", nil, -6)
+            bg:SetAllPoints()
+            bg:SetColorTexture(0.08, 0.08, 0.10, 0.95)
+            bar._bg = bg
+
+            local title = bar:CreateFontString(nil, "OVERLAY")
+            title:SetFont(GetDefaultFont(), 12, "OUTLINE")
+            title:SetPoint("LEFT", bar, "LEFT", 8, 0)
+            title:SetPoint("RIGHT", bar, "RIGHT", -28, 0)
+            title:SetJustifyH("LEFT")
+            title:SetWordWrap(false)
+            bar._title = title
+
+            local closeBtn = CreateFrame("Button", nil, bar)
+            closeBtn:SetSize(18, 18)
+            closeBtn:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
+            local closeTex = closeBtn:CreateFontString(nil, "OVERLAY")
+            closeTex:SetFont(GetDefaultFont(), 14, "OUTLINE")
+            closeTex:SetText("X")
+            closeTex:SetPoint("CENTER")
+            closeTex:SetTextColor(0.8, 0.3, 0.3, 1)
+            closeBtn:SetScript("OnEnter", function() closeTex:SetTextColor(1, 0.5, 0.5, 1) end)
+            closeBtn:SetScript("OnLeave", function() closeTex:SetTextColor(0.8, 0.3, 0.3, 1) end)
+            bar._closeBtn = closeBtn
+
+            self._headerBars[idx] = bar
+        end
+
+        bar:ClearAllPoints()
+        bar:SetPoint("TOP", self, "TOP", 0, self._yOff)
+        bar._title:SetText(titleText or "")
+        if titleColor then
+            bar._title:SetTextColor(titleColor[1] or 1, titleColor[2] or 1, titleColor[3] or 1, 1)
+        else
+            bar._title:SetTextColor(1, 1, 1, 1)
+        end
+        bar._closeBtn:SetScript("OnClick", onCloseClick or function() self:Hide() end)
+        bar:Show()
+        self._yOff = self._yOff - 26
+    end
+
+    -- Spell row: icon + name + bar fill (behind) + value text.
+    function menu:AddSpellRow(spec)
+        self._spellRowCount = self._spellRowCount + 1
+        local idx = self._spellRowCount
+        local row = self._spellRows[idx]
+        if not row then
+            row = CreateFrame("Frame", nil, self)
+            row:SetSize(menuWidth - 8, 22)
+
+            local barBg = row:CreateTexture(nil, "BACKGROUND", nil, -2)
+            barBg:SetPoint("LEFT", row, "LEFT", 22, 0)
+            barBg:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+            barBg:SetPoint("TOP", row, "TOP", 0, -1)
+            barBg:SetPoint("BOTTOM", row, "BOTTOM", 0, 1)
+            barBg:SetColorTexture(0.1, 0.1, 0.1, 0.7)
+            row._barBg = barBg
+
+            local bar = CreateFrame("StatusBar", nil, row)
+            bar:SetPoint("LEFT", row, "LEFT", 22, 0)
+            bar:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+            bar:SetPoint("TOP", row, "TOP", 0, -1)
+            bar:SetPoint("BOTTOM", row, "BOTTOM", 0, 1)
+            bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+            bar:SetMinMaxValues(0, 1)
+            bar:SetValue(0)
+            row._bar = bar
+
+            local icon = row:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(18, 18)
+            icon:SetPoint("LEFT", row, "LEFT", 2, 0)
+            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            row._icon = icon
+
+            local nameFS = bar:CreateFontString(nil, "OVERLAY")
+            nameFS:SetFont(GetDefaultFont(), 10, "OUTLINE")
+            nameFS:SetPoint("LEFT", bar, "LEFT", 4, 0)
+            nameFS:SetPoint("RIGHT", bar, "RIGHT", -72, 0)
+            nameFS:SetJustifyH("LEFT")
+            nameFS:SetWordWrap(false)
+            row._nameFS = nameFS
+
+            local valueFS = bar:CreateFontString(nil, "OVERLAY")
+            valueFS:SetFont(GetDefaultFont(), 10, "OUTLINE")
+            valueFS:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
+            valueFS:SetJustifyH("RIGHT")
+            valueFS:SetWordWrap(false)
+            row._valueFS = valueFS
+
+            self._spellRows[idx] = row
+        end
+
+        row:ClearAllPoints()
+        row:SetPoint("TOP", self, "TOP", 0, self._yOff)
+
+        -- Icon
+        local tex
+        if spec.spellID and C_Spell and C_Spell.GetSpellTexture then
+            tex = C_Spell.GetSpellTexture(spec.spellID)
+        end
+        if tex then
+            row._icon:SetTexture(tex)
+        else
+            row._icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+        end
+
+        -- Name + color
+        row._nameFS:SetText(spec.nameText or "")
+        if spec.nameColor then
+            row._nameFS:SetTextColor(spec.nameColor[1] or 1, spec.nameColor[2] or 1, spec.nameColor[3] or 1, 1)
+        else
+            row._nameFS:SetTextColor(1, 1, 1, 1)
+        end
+
+        -- Value
+        row._valueFS:SetText(spec.valueText or "")
+        row._valueFS:SetTextColor(1, 1, 1, 1)
+
+        -- Bar fill + color
+        local frac = tonumber(spec.fillFraction) or 0
+        if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
+        row._bar:SetMinMaxValues(0, 1)
+        row._bar:SetValue(frac)
+        if spec.barColor then
+            row._bar:SetStatusBarColor(spec.barColor[1] or 0.6, spec.barColor[2] or 0.6, spec.barColor[3] or 0.6, 0.85)
+        else
+            row._bar:SetStatusBarColor(0.6, 0.6, 0.6, 0.85)
+        end
+
+        row:Show()
+        self._yOff = self._yOff - 22
+    end
+
+    -- Placeholder text: single non-interactive informational row.
+    function menu:AddPlaceholderText(text)
+        self._placeholderTextCount = self._placeholderTextCount + 1
+        local idx = self._placeholderTextCount
+        local frm = self._placeholderTexts[idx]
+        if not frm then
+            frm = CreateFrame("Frame", nil, self)
+            frm:SetSize(menuWidth - 8, 28)
+            local fs = frm:CreateFontString(nil, "OVERLAY")
+            fs:SetFont(GetDefaultFont(), 11, "OUTLINE")
+            fs:SetPoint("CENTER")
+            fs:SetJustifyH("CENTER")
+            fs:SetWordWrap(true)
+            fs:SetTextColor(0.75, 0.75, 0.78, 1)
+            frm._fs = fs
+            self._placeholderTexts[idx] = frm
+        end
+        frm:ClearAllPoints()
+        frm:SetPoint("TOP", self, "TOP", 0, self._yOff)
+        frm._fs:SetText(text or "")
+        frm:Show()
+        self._yOff = self._yOff - 28
+    end
+
     function menu:ShowAtAnchor(anchor)
         -- Dismiss any other open menu
         if activeDMYMenu and activeDMYMenu ~= self and activeDMYMenu:IsShown() then
@@ -199,9 +382,17 @@ local COLUMN_FORMAT_GROUPS = {
 -- positioned at their column offsets on top of the bar.
 --------------------------------------------------------------------------------
 
-function DMY._CreateBarRow(scrollContent, rowIndex)
+function DMY._CreateBarRow(scrollContent, rowIndex, windowIndex)
     local row = CreateFrame("Frame", nil, scrollContent)
     row:SetHeight(22)
+    row._windowIndex = windowIndex
+    row:EnableMouse(true)
+    row:SetScript("OnMouseUp", function(self, button)
+        if button ~= "LeftButton" then return end
+        if DMY._OpenDrilldown then
+            DMY._OpenDrilldown(self)
+        end
+    end)
 
     -- Icon
     local icon = row:CreateTexture(nil, "ARTWORK")
@@ -274,6 +465,32 @@ function DMY._CreateBarRow(scrollContent, rowIndex)
         vt:SetTextColor(1, 1, 1, 1)
         vt:Hide()
         row.valueTexts[c] = vt
+    end
+
+    -- Per-column click overlays (multi-column drill-down dispatch).
+    -- Children of row at level+1 so they intercept clicks before the row's
+    -- OnMouseUp. Sized/positioned by _LayoutBarRows. Hidden when numColumns==1.
+    row.colClickRegions = {}
+    for c = 1, DMY.MAX_COLUMNS do
+        local btn = CreateFrame("Button", nil, row)
+        btn:SetFrameLevel(row:GetFrameLevel() + 1)
+        btn:RegisterForClicks("LeftButtonUp")
+        btn._columnIndex = c
+
+        local hl = btn:CreateTexture(nil, "BACKGROUND", nil, -1)
+        hl:SetAllPoints()
+        hl:SetColorTexture(1, 1, 1, 0)
+        btn._hl = hl
+
+        btn:SetScript("OnEnter", function(self) self._hl:SetColorTexture(1, 1, 1, 0.05) end)
+        btn:SetScript("OnLeave", function(self) self._hl:SetColorTexture(1, 1, 1, 0) end)
+        btn:SetScript("OnClick", function(self)
+            if DMY._OpenDrilldown then
+                DMY._OpenDrilldown(row, self._columnIndex)
+            end
+        end)
+        btn:Hide()
+        row.colClickRegions[c] = btn
     end
 
     row._rowIndex = rowIndex
@@ -395,6 +612,10 @@ function DMY._CreateWindow(windowIndex, comp)
     local function ApplySegmentChange(cfg)
         local c = DMY._comp
         if not c then return end
+        -- Close drill-down if it belongs to this window (context invalidated)
+        if DMY._activeDrilldown and DMY._activeDrilldown.windowIndex == winIdx then
+            if DMY._CloseDrilldown then DMY._CloseDrilldown() end
+        end
         DMY._UpdateSessionHeader(winIdx, c)
         DMY._CalculateColumnWidths(winIdx, c)
         DMY._LayoutBarRows(winIdx, c)
@@ -547,11 +768,11 @@ function DMY._CreateWindow(windowIndex, comp)
     -- Create bar row pool
     local barRows = {}
     for r = 1, DMY.MAX_POOL do
-        barRows[r] = DMY._CreateBarRow(scrollContent, r)
+        barRows[r] = DMY._CreateBarRow(scrollContent, r, windowIndex)
     end
 
     -- Local player pinned row (separate frame below scroll area)
-    local pinnedRow = DMY._CreateBarRow(frame, 0)
+    local pinnedRow = DMY._CreateBarRow(frame, 0, windowIndex)
     pinnedRow:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
     pinnedRow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
 
